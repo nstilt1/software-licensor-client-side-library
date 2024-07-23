@@ -26,7 +26,7 @@ pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ec
     };
     // the amount of ecdh keys is a multiple of 2, so we can use a bitwise and to select a random one
     if get_ecdh_key {
-        let ecdh_key = &pubkey_repo.ecdh_keys[OsRng.next_u32() as usize & pubkey_repo.ecdh_keys.len() - 1];
+        let ecdh_key = &pubkey_repo.ecdh_keys[OsRng.next_u32() as usize & (pubkey_repo.ecdh_keys.len() - 1)];
         data_storage.next_server_ecdh_key = Some(CompactServerEcdhKey {
             ecdh_key_id: ecdh_key.ecdh_key_id.clone(),
             ecdh_public_key: ecdh_key.ecdh_public_key.clone(),
@@ -66,7 +66,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
     }
     let all_product_ids = product_id_hashmap.keys().cloned().collect::<Vec<String>>();
 
-    if all_product_ids.len() == 0 {
+    if all_product_ids.is_empty() {
         return Err(Error::LicensingError(2))
     }
 
@@ -139,7 +139,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
     };
 
     let mut server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server's ECDSA key was missing in the license file")?;
-    if server_ecdsa_key.expiration < SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() {
+    if server_ecdsa_key.expiration < SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() {
         get_pubkeys(license_file, false).await?;
         server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server ECDSA key was not set in the license file")?;
     }
@@ -150,7 +150,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
         data,
         decryption_info: Some(decryption_info),
         server_ecdsa_key_id: server_ecdsa_key.ecdsa_key_id.clone(),
-        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
     };
 
     let response = Client::new()
@@ -231,7 +231,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
 
     // save the license response
     license_file.license_activation_response = Some(license_response);
-    save_license_file(&license_file, company_name_str)?;
+    save_license_file(license_file, company_name_str)?;
 
     Ok(())
 }

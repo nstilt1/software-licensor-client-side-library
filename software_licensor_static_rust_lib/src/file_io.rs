@@ -45,7 +45,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
                     get_pubkeys(&mut data_storage, true).await?;
                 }
                 save_license_file(&data_storage, company_name_str)?;
-                return Ok(data_storage);
+                Ok(data_storage)
             },
             Err(_) => {
                 // need to initialize the file
@@ -58,7 +58,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
                 };
                 get_pubkeys(&mut data_storage, true).await?;
                 save_license_file(&data_storage, company_name_str)?;
-                return Ok(data_storage);
+                Ok(data_storage)
             }
         }
     } else {
@@ -75,7 +75,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
         };
         get_pubkeys(&mut data_storage, true).await?;
         save_license_file(&data_storage, company_name_str)?;
-        return Ok(data_storage);
+        Ok(data_storage)
     }
 }
 
@@ -137,7 +137,7 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
         };
         return Ok((key_file.clone(), signature, license_activation_response.clone()))
     }
-    if found_key_files.len() == 0 {
+    if found_key_files.is_empty() {
         let errors = &license_activation_response.licensing_errors;
         let mut error_codes = Vec::with_capacity(errors.len());
         errors.iter().for_each(|(k,v)| {
@@ -145,7 +145,7 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
                 error_codes.push(*v);
             }
         });
-        if error_codes.len() == 0 {
+        if error_codes.is_empty() {
             return Err(Error::LicensingError(2))
         }
         // prioritizing specific licensing errors over others
@@ -180,7 +180,7 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
         Ok(v) => v,
         Err(_) => return Err(Error::LicensingError(2))
     };
-    return Ok((key_file.clone(), signature, license_activation_response.clone()))
+    Ok((key_file.clone(), signature, license_activation_response.clone()))
 }
 
 /// Removes key files so that we don't keep automatically checking up
@@ -197,10 +197,7 @@ pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product
         license_response.licensing_errors.remove(*product_id);
     }
     license_file.license_activation_response = Some(license_response);
-    match save_license_file(&license_file, company_name_str) {
-        Ok(_) => (),
-        Err(_) => ()
-    }
+    let _ = save_license_file(license_file, company_name_str);
 }
 
 /// Handles licensing errors by removing key files before returning the error
@@ -209,11 +206,11 @@ pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, p
     match licensing_error {
         Error::LicensingError(e) => {
             remove_key_files(license_file, product_ids, company_name_str);
-            return Ok(LicenseData::licensing_error(e as i32))
+            Ok(LicenseData::licensing_error(e as i32))
         },
         _ => {
             remove_key_files(license_file, product_ids, company_name_str);
-            return Err(licensing_error)
+            Err(licensing_error)
         }
     }
 }
@@ -234,7 +231,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
         remove_key_files(&mut license_file, &product_ids, company_name_str);
         return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32));
     }
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     if key_file.expiration_timestamp < now {
         if !is_fresh_request {
             remove_key_files(&mut license_file, &product_ids, company_name_str);
@@ -261,14 +258,11 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     }
     if key_file.check_back_timestamp < now {
         // send request
-        match activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
-            Ok(_) => {
-                (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
-                    Ok(v) => v,
-                    Err(licensing_error) => return handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error)
-                }
+        if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
+            (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
+                Ok(v) => v,
+                Err(licensing_error) => return handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error)
             }
-            Err(_) => ()
         }
     }
 
@@ -295,11 +289,11 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
             return Err(Error::LicensingError(2))
         }
     };
-    match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(&bytes), &signature) {
-        Ok(_) => return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32)),
+    match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(bytes), &signature) {
+        Ok(_) => Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32)),
         Err(_) => {
             remove_key_files(&mut license_file, &product_ids, company_name_str);
-            return Err(Error::LicensingError(2))
+            Err(Error::LicensingError(2))
         }
     }
 }
@@ -314,7 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn key_file_ordering() {
-        let mut data_storage = get_or_init_license_file("software_licensor_test_company").await.unwrap();
+        let mut data_storage = get_or_init_license_file("software_licensor_test_company").await.expect("This should succeed unless the file is lacking permissions");
 
         let mut license_response = LicenseActivationResponse { 
             key_files: HashMap::new(), 
@@ -384,11 +378,11 @@ mod tests {
 
         data_storage.license_activation_response = Some(license_response);
 
-        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).unwrap().0;
+        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
 
-        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).unwrap().0;
+        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
     }

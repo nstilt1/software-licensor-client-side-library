@@ -1,4 +1,5 @@
 #![deny(clippy::unwrap_used)]
+#![allow(clippy::enum_variant_names)]
 
 use std::collections::HashMap;
 use std::os::raw::{c_char, c_int};
@@ -96,7 +97,14 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     let license_code_str = parse_c_char!(license_code, "Failed to parse license code", true);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
-    let product_ids_and_pubkeys_vec: Vec<&str> = array_size.iter().map(|&s| unsafe { CStr::from_ptr(s).to_str().unwrap() }).collect();
+    
+    let mut product_ids_and_pubkeys_vec: Vec<&str> = Vec::with_capacity(len as usize);
+    for s in array_size.iter() {
+        match unsafe { CStr::from_ptr(*s).to_str() } {
+            Ok(v) => product_ids_and_pubkeys_vec.push(v),
+            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys"))
+        }
+    }
 
     let mut product_ids_and_pubkeys_hashmap: HashMap<String, String> = HashMap::new();
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
@@ -165,7 +173,17 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", callback, false);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
-    let product_ids_and_pubkeys_vec: Vec<&str> = array_size.iter().map(|&s| unsafe { CStr::from_ptr(s).to_str().unwrap() }).collect();
+    
+    let mut product_ids_and_pubkeys_vec: Vec<&str> = Vec::with_capacity(len as usize);
+    for s in array_size.iter() {
+        match unsafe { CStr::from_ptr(*s).to_str() } {
+            Ok(v) => product_ids_and_pubkeys_vec.push(v),
+            Err(_) => {
+                callback(box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys")));
+                return
+            }
+        }
+    }
 
     let mut product_ids_and_pubkeys_hashmap: HashMap<String, String> = HashMap::new();
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
@@ -214,7 +232,14 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
-    let product_ids_and_pubkeys_vec: Vec<&str> = array_size.iter().map(|&s| unsafe { CStr::from_ptr(s).to_str().unwrap() }).collect();
+    
+    let mut product_ids_and_pubkeys_vec: Vec<&str> = Vec::with_capacity(len as usize);
+    for s in array_size.iter() {
+        match unsafe { CStr::from_ptr(*s).to_str() } {
+            Ok(v) => product_ids_and_pubkeys_vec.push(v),
+            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys"))
+        }
+    }
 
     let mut product_ids_and_pubkeys_hashmap: HashMap<String, String> = HashMap::new();
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {

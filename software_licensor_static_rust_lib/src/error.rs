@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 #[derive(Debug)]
 pub enum Error {
     LicensingError(u32), // a licensing error
@@ -6,17 +8,19 @@ pub enum Error {
     OptionError(String),
     CryptoError(String),
     ReqwestError(reqwest::Error),
+    SystemTimeError,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ApiError(s) => f.write_str(&s),
+            Self::ApiError(s) => f.write_str(s),
             Self::LicensingError(v) => f.write_str(&v.to_string()),
-            Self::CryptoError(s) => f.write_str(&s),
-            Self::OptionError(s) => f.write_str(&s),
+            Self::CryptoError(s) => f.write_str(s),
+            Self::OptionError(s) => f.write_str(s),
             Self::IoError => f.write_str("There was an IO error"),
             Self::ReqwestError(e) => f.write_str(&e.to_string()),
+            Self::SystemTimeError => f.write_str("There was an error getting the current time"),
         }
     }
 }
@@ -30,7 +34,7 @@ impl<T: Sized> OptionErrors<T> for Option<T> {
         if let Some(v) = self {
             Ok(v)
         } else {
-            return Err(Error::OptionError(error_message.to_string()))
+            Err(Error::OptionError(error_message.to_string()))
         }
     }
 }
@@ -38,6 +42,12 @@ impl<T: Sized> OptionErrors<T> for Option<T> {
 impl From<reqwest::Error> for Error {
     fn from(value: reqwest::Error) -> Self {
         Self::ReqwestError(value)
+    }
+}
+
+impl From<SystemTimeError> for Error {
+    fn from(_value: SystemTimeError) -> Self {
+        Self::SystemTimeError
     }
 }
 
