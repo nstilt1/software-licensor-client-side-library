@@ -11,5 +11,11 @@ fn main() {
 }
 #[cfg(not(feature = "build-protos"))]
 fn main() {
-    
+    build_cxx();
+}
+
+fn build_cxx() {
+    cxx_build::bridge("src/lib.rs")
+        .std("c++17")
+        .compile("software_licensor_client_side");
 }
