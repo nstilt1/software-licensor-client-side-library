@@ -54,7 +54,13 @@ macro_rules! parse_c_char {
                 return;
             }
         }
-    }
+    };
+    ($c_char_arg:expr) => {
+        match unsafe { CStr::from_ptr($c_char_arg) }.to_str() {
+            Ok(v) => v,
+            Err(_) => return
+        }
+    };
 }
 
 /// Boxes a value that is being returned to the external code

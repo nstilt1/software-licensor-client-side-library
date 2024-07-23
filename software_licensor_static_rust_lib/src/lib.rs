@@ -7,8 +7,8 @@ use std::ffi::{CString, CStr};
 use std::time::Duration;
 
 use api::activate_license_request;
-use file_io::{check_key_file_async, get_or_init_license_file};
-use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyFile};
+use file_io::{check_key_file_async, get_or_init_license_file, save_license_file};
+use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyFile, Stats};
 use tokio::runtime::Runtime;
 
 mod api;
@@ -57,6 +57,124 @@ impl LicenseData {
     pub(crate) fn licensing_error(code: c_int) -> Self {
         Self::new(code, "", "", "", "", "", "")
     }
+}
+
+/// Updates machine information in the license file. It should be optional for
+/// the end user to have the stats saved, but there isn't a super convenient 
+/// way to save them all, and there isn't a way for Rust code to grab all of 
+/// the machine stats for all machines. These stats are readily available with 
+/// the JUCE library.
+#[no_mangle]
+#[inline(always)]
+pub extern "C" fn update_machine_info(
+    company_name: *const c_char, 
+    save_system_stats: bool, 
+    os_name: *const c_char, 
+    computer_name: *const c_char, 
+    is_64_bit: bool, 
+    users_language: *const c_char, 
+    display_language: *const c_char, 
+    num_logical_cores: c_int, 
+    num_physical_cores: c_int, 
+    cpu_freq_mhz: c_int, 
+    ram_mb: c_int, 
+    page_size: c_int, 
+    cpu_vendor: *const c_char, 
+    cpu_model: *const c_char, 
+    has_mmx: bool, 
+    has_3d_now: bool, 
+    has_fma3: bool, 
+    has_fma4: bool, 
+    has_sse: bool, 
+    has_sse2: bool, 
+    has_sse3: bool, 
+    has_ssse3: bool, 
+    has_sse41: bool, 
+    has_sse42: bool,
+    has_avx: bool,
+    has_avx2: bool,
+    has_avx512f: bool,
+    has_avx512bw: bool,
+    has_avx512cd: bool,
+    has_avx512dq: bool,
+    has_avx512er: bool,
+    has_avx512ifma: bool,
+    has_avx512pf: bool,
+    has_avx512vbmi: bool,
+    has_avx512vl: bool,
+    has_avx512vpopcntdq: bool,
+    has_neon: bool,
+) {
+    let company_name_str = parse_c_char!(company_name);
+    let os_name_str = parse_c_char!(os_name);
+    let computer_name_str = parse_c_char!(computer_name);
+    let users_language_str = parse_c_char!(users_language);
+    let display_language_str = parse_c_char!(display_language);
+    let cpu_vendor_str = parse_c_char!(cpu_vendor);
+    let cpu_model = parse_c_char!(cpu_model);
+    let rt = match Runtime::new() {
+        Ok(v) => v,
+        Err(_) => return
+    };
+
+    rt.block_on(async {
+        let mut license_file = match get_or_init_license_file(company_name_str).await {
+            Ok(v) => v,
+            Err(_) => return
+        };
+
+        if !save_system_stats {
+            license_file.machine_stats = None;
+            if license_file.machine_stats.is_some() {
+                license_file.machine_stats = None;
+                let _ = save_license_file(&license_file, company_name_str);
+            }
+            return
+        }
+
+        let current_stats = Some(Stats {
+            os_name: os_name_str.to_string(),
+            computer_name: computer_name_str.to_string(),
+            is_64_bit,
+            users_language: users_language_str.to_string(),
+            display_language: display_language_str.to_string(),
+            num_logical_cores: num_logical_cores as u32,
+            num_physical_cores: num_physical_cores as u32,
+            cpu_freq_mhz: cpu_freq_mhz as u32,
+            ram_mb: ram_mb as u32,
+            page_size: page_size as u32,
+            cpu_vendor: cpu_vendor_str.to_string(),
+            cpu_model: cpu_model.to_string(),
+            has_mmx,
+            has_3d_now,
+            has_fma3,
+            has_fma4,
+            has_sse,
+            has_sse2,
+            has_sse3,
+            has_ssse3,
+            has_sse41,
+            has_sse42,
+            has_avx,
+            has_avx2,
+            has_avx512f,
+            has_avx512bw,
+            has_avx512cd,
+            has_avx512dq,
+            has_avx512er,
+            has_avx512ifma,
+            has_avx512pf,
+            has_avx512vbmi,
+            has_avx512vl,
+            has_avx512vpopcntdq,
+            has_neon,
+        });
+
+        if license_file.machine_stats.ne(&current_stats) {
+            license_file.machine_stats = current_stats;
+            let _ = save_license_file(&license_file, company_name_str);
+        }
+    });
 }
 
 /// Deallocate license data after C++ code has evaluated/copied the data

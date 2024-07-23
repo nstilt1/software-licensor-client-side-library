@@ -52,6 +52,55 @@ extern "C" {
      * created license data.
      */
     void free_license_data(LicenseData* ptr);
+
+    /**
+     * Updates locally stored machine info that is sent to the server.
+     * 
+     * `save_system_stats` should be the parameter that determines whether or 
+     * not to actually save all of these stats. There isn't a neat way to 
+     * supply all of these values to the Rust code, and not all of these values
+     * can be determined within Rust for all machines, but they can be 
+     * determined using the JUCE library.
+     */
+    void update_machine_info(
+        const char* company_name, 
+        bool save_system_stats, 
+        const char* os_name, 
+        const char* computer_name, 
+        bool is_64_bit, 
+        const char* users_language, 
+        const char* display_language, 
+        int num_logical_cores, 
+        int num_physical_cores, 
+        int cpu_freq_mhz, 
+        int ram_mb, 
+        int page_size, 
+        const char* cpu_vendor, 
+        const char* cpu_model, 
+        bool has_mmx, 
+        bool has_3d_now, 
+        bool has_fma3, 
+        bool has_fma4, 
+        bool has_sse, 
+        bool has_sse2, 
+        bool has_sse3, 
+        bool has_ssse3, 
+        bool has_sse41, 
+        bool has_sse42,
+        bool has_avx,
+        bool has_avx2,
+        bool has_avx512f,
+        bool has_avx512bw,
+        bool has_avx512cd,
+        bool has_avx512dq,
+        bool has_avx512er,
+        bool has_avx512ifma,
+        bool has_avx512pf,
+        bool has_avx512vbmi,
+        bool has_avx512vl,
+        bool has_avx512vpopcntdq,
+        bool has_neon
+    );
 }
 
 void process_license_data(LicenseData* data) {
