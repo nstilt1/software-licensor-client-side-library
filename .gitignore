@@ -1,0 +1,5 @@
+**/CMakeFiles
+**/CMakeCache.txt
+cpp_test/cpp_test
+**/cmake_install.cmake
+cpp_test/Makefile
