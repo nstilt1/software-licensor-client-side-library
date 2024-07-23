@@ -14,14 +14,16 @@ pub(crate) type EcdsaDigest = Sha384;
 use crate::{error::{Error, OptionErrors}, file_io::save_license_file, generated::software_licensor_client::{decrypt_info::ClientEcdhPubkey, ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response}, LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL};
 
 /// Gets the Software Licensor Public Keys.
-pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) {
+pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
     let client = Client::new();
     let keys = client
         .get(PUBLIC_KEY_REPO_URL)
         .send()
-        .await
-        .unwrap();
-    let pubkey_repo = PubkeyRepo::decode_length_delimited(keys.bytes().await.unwrap()).unwrap();
+        .await?;
+    let pubkey_repo = match PubkeyRepo::decode_length_delimited(keys.bytes().await?) {
+        Ok(v) => v,
+        Err(_) => return Err(Error::ApiError("Pubkey repo was not decodable".to_string()))
+    };
     // the amount of ecdh keys is a multiple of 2, so we can use a bitwise and to select a random one
     if get_ecdh_key {
         let ecdh_key = &pubkey_repo.ecdh_keys[OsRng.next_u32() as usize & pubkey_repo.ecdh_keys.len() - 1];
@@ -31,12 +33,13 @@ pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ec
         });
     }
 
-    let ecdsa_key = &pubkey_repo.ecdsa_key.unwrap();
+    let ecdsa_key = &pubkey_repo.ecdsa_key.expect("protobuf should be formatted correctly");
     data_storage.server_ecdsa_key = Some(CompactServerEcdsaKey {
         ecdsa_key_id: ecdsa_key.ecdsa_key_id.to_owned(),
         ecdsa_public_key: ecdsa_key.ecdsa_public_key.to_owned(),
         expiration: ecdsa_key.expiration,
     });
+    Ok(())
 }
 
 /// Performs an activate_license request.
@@ -88,7 +91,13 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
     let symmetric_algorithm = "aes-256-gcm";
 
     let ephemeral_key = EphemeralSecret::random(&mut OsRng);
-    let next_ecdh_key = license_file.next_server_ecdh_key.unwrap_or_err("The next ECDH key was missing in the license file")?;
+    let next_ecdh_key = match license_file.next_server_ecdh_key.unwrap_or_err("The next ECDH key was missing in the license file") {
+        Ok(v) => v,
+        Err(_) => {
+            get_pubkeys(license_file, true).await?;
+            license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?
+        }
+    };
     let server_ecdh_pubkey = PublicKey::from_sec1_bytes(&next_ecdh_key.ecdh_public_key)?;
 
     let shared_secret = ephemeral_key.diffie_hellman(&server_ecdh_pubkey);
@@ -129,12 +138,18 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
         ),
     };
 
+    let mut server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server's ECDSA key was missing in the license file")?;
+    if server_ecdsa_key.expiration < SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() {
+        get_pubkeys(license_file, false).await?;
+        server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server ECDSA key was not set in the license file")?;
+    }
+
     let encapsulating_payload = Request {
         symmetric_algorithm: symmetric_algorithm.to_string(),
         client_id: store_id.to_string(),
         data,
         decryption_info: Some(decryption_info),
-        server_ecdsa_key_id: license_file.server_ecdsa_key.unwrap_or_err("The servre's ECDSA Key was missing in the license file")?.ecdsa_key_id.clone(),
+        server_ecdsa_key_id: server_ecdsa_key.ecdsa_key_id.clone(),
         timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
     };
 
@@ -172,14 +187,10 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
         Ok(v) => v,
         Err(_) => return Err(Error::ApiError("The signature was invalid".to_string()))
     };
-    let ecdsa_key = match &license_file.server_ecdsa_key {
-        Some(v) => v,
-        None => return Err(Error::IoError)
-    };
 
     let response_bytes = response.bytes().await?;
 
-    let verifying_key = match VerifyingKey::from_sec1_bytes(&ecdsa_key.ecdsa_public_key) {
+    let verifying_key = match VerifyingKey::from_sec1_bytes(&server_ecdsa_key.ecdsa_public_key) {
         Ok(v) => v,
         Err(_) => return Err(Error::ApiError("The verifying key could not be decoded".to_string()))
     };

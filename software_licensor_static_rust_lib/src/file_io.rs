@@ -42,7 +42,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
             Ok(mut data_storage) => {
                 // ensure that the next key before returning
                 if data_storage.next_server_ecdh_key.is_none() {
-                    get_pubkeys(&mut data_storage, true).await;
+                    get_pubkeys(&mut data_storage, true).await?;
                 }
                 save_license_file(&data_storage, company_name_str)?;
                 return Ok(data_storage);
@@ -56,7 +56,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
                     license_code: "".to_string(),
                     server_ecdsa_key: None,
                 };
-                get_pubkeys(&mut data_storage, true).await;
+                get_pubkeys(&mut data_storage, true).await?;
                 save_license_file(&data_storage, company_name_str)?;
                 return Ok(data_storage);
             }
@@ -73,7 +73,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
             license_code: "".to_string(),
             server_ecdsa_key: None,
         };
-        get_pubkeys(&mut data_storage, true).await;
+        get_pubkeys(&mut data_storage, true).await?;
         save_license_file(&data_storage, company_name_str)?;
         return Ok(data_storage);
     }
