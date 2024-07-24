@@ -262,15 +262,9 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     })
 }
 
-/// Checks the license and calls the callback with the result.
+/// Checks the license and returns the result.
 /// 
-/// The callback function might not be able to be inlined, making it a target 
-/// for crackers to alter it to always return the success response. However, it
-/// will update the license file locally with the correct response from the 
-/// server. This function is performed asynchronously, so calling 
-/// `check_license_no_api_request` should return updated information with 
-/// inlining, depending on how long ago this function (`check_license`) was 
-/// called.
+/// This function may make an API request, so it shouldn't be called while processing audio.
 /// 
 /// # Arguments
 /// 
@@ -285,10 +279,10 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
 /// * `len` - the length of the `product_ids_and_pubkeys` array 
 #[no_mangle]
 #[inline(always)]
-pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int, callback: extern "C" fn(*mut LicenseData)) {
-    let store_id_str = parse_c_char!(store_id, "Failed to parse store id", callback, false);
-    let company_name_str = parse_c_char!(company_name, "Failed to parse company name", callback, false);
-    let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", callback, false);
+pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+    let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
+    let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
+    let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
     
@@ -297,8 +291,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
             Err(_) => {
-                callback(box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys")));
-                return
+                return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys"))
             }
         }
     }
@@ -307,33 +300,32 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            callback(box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1")));
-            return;
+            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"))
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
 
-    let rt = runtime!(callback, false);
+    let rt = runtime!(true);
 
     rt.block_on(async {
         match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false).await {
             Ok(v) => {
-                callback(box_out!(v))
+                box_out!(v)
             },
             Err(e) => {
                 match e {
                     Error::LicensingError(v) => {
                         let r = LicenseData::licensing_error(v as i32);
-                        callback(box_out!(r))
+                        box_out!(r)
                     },
                     _ => {
                         let r = LicenseData::error(e.to_string().as_str());
-                        callback(box_out!(r));
+                        box_out!(r)
                     }
                 }
             }
         }
-    });
+    })
 }
 
 /// Checks the license file with a guarantee that it will not ping the server 

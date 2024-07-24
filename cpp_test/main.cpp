@@ -30,8 +30,9 @@ int main() {
     free_license_data(data);
 
 
-    check_license(company_name, store_id, machine_id, product_ids_and_pubkeys, len, process_license_data);
+    auto data_3 = check_license(company_name, store_id, machine_id, product_ids_and_pubkeys, len);
 
+    free_license_data(data_3);
     auto data_2 = check_license_no_api_request(company_name, store_id, machine_id, product_ids_and_pubkeys, len);
     std::cout << "Loaded data from license file: " << std::endl;
     std::cout << "Result code: " << data_2->result_code << std::endl;

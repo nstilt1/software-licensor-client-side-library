@@ -19,15 +19,9 @@ extern "C" {
 
     /**
      * Checks the locally stored license data, and performs an API request if 
-     * needed. Returns the data to the callback function.
-     * 
-     * Note that the callback function may not be able to be inlined 
-     * properly, creating a weak point. However, this function will still 
-     * overwrite the locally stored license data, and 
-     * `check_license_no_api_request` can still return the information from 
-     * the locally stored file.
+     * needed.
      */
-    void check_license(const char* company_name, const char* store_id, const char* machine_id, const char** product_ids_and_pubkeys, int len, void(*callback)(LicenseData*));
+    LicenseData* check_license(const char* company_name, const char* store_id, const char* machine_id, const char** product_ids_and_pubkeys, int len);
 
     /**
      * Submits an API request to the Software Licensor serverless endpoint 
@@ -101,17 +95,4 @@ extern "C" {
         bool has_avx512vpopcntdq,
         bool has_neon
     );
-}
-
-void process_license_data(LicenseData* data) {
-    std::cout << "Received license data: " << std::endl;
-    std::cout << "Result code: " << data->result_code << std::endl;
-    std::cout << "First name: " << data->customer_first_name << std::endl;
-    std::cout << "Last name: " << data->customer_last_name << std::endl;
-    std::cout << "Email: " << data->customer_email << std::endl;
-    std::cout << "License type: " << data->license_type << std::endl;
-    std::cout << "Version: " << data->version << std::endl;
-    std::cout << "Error message: " << data->error_message << std::endl;
-
-    free_license_data(data);
 }
