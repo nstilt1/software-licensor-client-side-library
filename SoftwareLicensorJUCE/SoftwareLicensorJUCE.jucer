@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="leqTBm" name="SoftwareLicensorJUCE" projectType="library"
+              useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+  <MAINGROUP id="WNnsFY" name="SoftwareLicensorJUCE">
+    <GROUP id="{8FD4083E-5608-0C85-C6F6-EE6FC1358D10}" name="Resources">
+      <FILE id="i5rPAm" name="Texts_en.properties" compile="0" resource="1"
+            file="Resources/Texts_en.properties"/>
+      <FILE id="mJ1QZF" name="Texts_es.properties" compile="0" resource="1"
+            file="Resources/Texts_es.properties"/>
+      <FILE id="B6O6Ds" name="Texts_fr.properties" compile="0" resource="1"
+            file="Resources/Texts_fr.properties"/>
+    </GROUP>
+    <GROUP id="{D8466317-317D-C4D2-02DD-9E51695B1432}" name="Source">
+      <FILE id="HLLLJo" name="SoftwareLicensorUnlockForm.cpp" compile="1"
+            resource="0" file="Source/SoftwareLicensorUnlockForm.cpp"/>
+      <FILE id="HC5exb" name="SoftwareLicensorUnlockForm.h" compile="0" resource="0"
+            file="Source/SoftwareLicensorUnlockForm.h"/>
+      <FILE id="iHknEs" name="SoftwareLicensorStatus.h" compile="0" resource="0"
+            file="Source/SoftwareLicensorStatus.h"/>
+      <FILE id="PulYMy" name="SoftwareLicensorStatus.cpp" compile="1" resource="0"
+            file="Source/SoftwareLicensorStatus.cpp"/>
+    </GROUP>
+  </MAINGROUP>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"/>
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="SoftwareLicensorJUCE"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="SoftwareLicensorJUCE"
+                       libraryPath="&quot;C:\Users\somed\Documents\coding\software-licensor-client-side-library\software_licensor_static_rust_lib\target\release&quot;"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_core" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_events" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_product_unlocking" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_cryptography" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_graphics" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../../../juce/modules"/>
+      </MODULEPATHS>
+    </VS2022>
+    <XCODE_MAC targetFolder="Builds/MacOSX">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="SoftwareLicensorJUCE"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="SoftwareLicensorJUCE"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_core" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_events" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_product_unlocking" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_cryptography" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_graphics" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../../../juce/modules"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+    <LINUX_MAKE targetFolder="Builds/LinuxMakefile">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug"/>
+        <CONFIGURATION isDebug="0" name="Release"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_core" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_cryptography" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_data_structures" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_events" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_graphics" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_gui_basics" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_gui_extra" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_product_unlocking" path="C:\Users\somed\Documents\coding\juce\modules"/>
+      </MODULEPATHS>
+    </LINUX_MAKE>
+  </EXPORTFORMATS>
+  <MODULES>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_cryptography" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_product_unlocking" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+  </MODULES>
+</JUCERPROJECT>
