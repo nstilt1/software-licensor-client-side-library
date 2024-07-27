@@ -23,7 +23,7 @@ The Rust static library can be built with `cargo build --release`.
 
 For the cpp_test folder, you might need to run `cmake .` in `cpp_test/`, followed by `make`.
 
-The C++ headers and .cpp files will need to be included in a JUCE plugin project, along with the compiled Rust Library file in `software_licensor_static_rust_lib/target/release`. It might be best to compile the plugin using CMake. Don't forget to rebuild the Rust library for each platform, or cross compile the Rust library for each platform.
+To build the JUCE code, the C++ headers and .cpp files will need to be included in a JUCE plugin project, along with the compiled Rust Library file in `software_licensor_static_rust_lib/target/release`. It might be best to compile the plugin using CMake. Don't forget to rebuild the Rust library for each platform, or cross compile the Rust library for each platform.
 
 # Dependencies
 
