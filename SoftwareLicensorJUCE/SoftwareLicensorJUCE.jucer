@@ -35,10 +35,10 @@
         <MODULEPATH id="juce_data_structures" path="../../../juce/modules"/>
         <MODULEPATH id="juce_events" path="../../../juce/modules"/>
         <MODULEPATH id="juce_product_unlocking" path="../../../juce/modules"/>
-        <MODULEPATH id="juce_cryptography" path="../../../juce/modules"/>
         <MODULEPATH id="juce_gui_basics" path="../../../juce/modules"/>
         <MODULEPATH id="juce_graphics" path="../../../juce/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_cryptography" path="../../JUCE-8.0.0/modules"/>
       </MODULEPATHS>
     </VS2022>
     <XCODE_MAC targetFolder="Builds/MacOSX">
@@ -51,10 +51,10 @@
         <MODULEPATH id="juce_data_structures" path="../../../juce/modules"/>
         <MODULEPATH id="juce_events" path="../../../juce/modules"/>
         <MODULEPATH id="juce_product_unlocking" path="../../../juce/modules"/>
-        <MODULEPATH id="juce_cryptography" path="../../../juce/modules"/>
         <MODULEPATH id="juce_gui_basics" path="../../../juce/modules"/>
         <MODULEPATH id="juce_graphics" path="../../../juce/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../../../juce/modules"/>
+        <MODULEPATH id="juce_cryptography" path="../../JUCE-8.0.0/modules"/>
       </MODULEPATHS>
     </XCODE_MAC>
     <LINUX_MAKE targetFolder="Builds/LinuxMakefile">
@@ -64,13 +64,13 @@
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core" path="C:\Users\somed\Documents\coding\juce\modules"/>
-        <MODULEPATH id="juce_cryptography" path="C:\Users\somed\Documents\coding\juce\modules"/>
         <MODULEPATH id="juce_data_structures" path="C:\Users\somed\Documents\coding\juce\modules"/>
         <MODULEPATH id="juce_events" path="C:\Users\somed\Documents\coding\juce\modules"/>
         <MODULEPATH id="juce_graphics" path="C:\Users\somed\Documents\coding\juce\modules"/>
         <MODULEPATH id="juce_gui_basics" path="C:\Users\somed\Documents\coding\juce\modules"/>
         <MODULEPATH id="juce_gui_extra" path="C:\Users\somed\Documents\coding\juce\modules"/>
         <MODULEPATH id="juce_product_unlocking" path="C:\Users\somed\Documents\coding\juce\modules"/>
+        <MODULEPATH id="juce_cryptography" path="../../JUCE-8.0.0/modules"/>
       </MODULEPATHS>
     </LINUX_MAKE>
   </EXPORTFORMATS>
