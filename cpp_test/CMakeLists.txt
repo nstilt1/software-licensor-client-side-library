@@ -21,7 +21,7 @@ if(WIN32)
         Ws2_32
     )
 else()
-    target_link_libraries(cpp_test ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/release/libsoftware_licensor_static_rust_lib.a)
+    target_link_libraries(cpp_test ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/universal/libsoftwarelicensor.a)
 endif()
 # Assuming the Rust library outputs to the target/release directory
 

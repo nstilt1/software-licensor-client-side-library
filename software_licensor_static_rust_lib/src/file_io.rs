@@ -13,11 +13,37 @@ use crate::generated::software_licensor_client::{ClientSideDataStorage, LicenseA
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::LicenseData;
 
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::PermissionsExt;
+
+#[cfg(target_os = "macos")]
+fn has_permissions(path: &PathBuf) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.permissions())
+        .map(|permissions| permissions.mode() & 0o222 != 0)
+        .unwrap_or(false)
+}
+
 pub(crate) fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
     #[cfg(target_os = "windows")]
     let dir_path = format!("C:\\ProgramData\\{}\\license.bin", company_name_str);
     #[cfg(target_os = "macos")]
-    let dir_path = format!("/Library/Application Support/{}/license.bin", company_name_str);
+    let dir_path = {
+        // defaults to a system-wide path, but if the program lacks permissions, we'll write to a user-specific path
+        let dir_path: String = format!("/Library/Application Support/{}/license.bin", company_name_str);
+        let p = Path::new(&dir_path).to_owned();
+        if has_permissions(&p) {
+            dir_path
+        } else {
+            std::env::home_dir()
+                .unwrap_or("IOError/".into())
+                .join("Library/Application Support/")
+                .join(company_name_str)
+                .to_str()
+                .expect("Should be valid")
+                .to_string()
+        }
+    };
     #[cfg(target_os = "linux")]
     let dir_path = format!("{}/.local/share/{}/license.bin", std::env::var("HOME")?, company_name_str);
     #[cfg(target_os = "android")]

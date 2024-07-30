@@ -14,6 +14,8 @@ The Rust static library can be built with
 cargo build --release --target your-target
 ```
 
+For MacOS, you can call `sudo chmod +x ./build_mac.sh` and then run that script. It will compile the Rust code into x86_64 and aarch64 libraries, and then combined those compiled files into a single file in `software_licensor_static_rust_lib/target/universal`.
+
 For Windows on x86_64, the target should be `x86_64-pc-windows-msvc`.
 
 For the cpp_test folder, you might need to run `cmake .` in `cpp_test/`, followed by `make`.
@@ -25,18 +27,35 @@ You will need to override the following members of the `SoftwareLicensorStatus` 
 * `getCompanyName()` - this is only for making a directory in the end user's machine. See `get_license_file_path()` in `file_io.rs`.
 * `getProductIdsAndPubkeys()` - a vector of product IDs and their public keys separated by a semicolon. You could define multiple IDs and Public Keys for a piece of software if it is included in a bundle, as well as distributed individually. The product IDs and public keys can be found on the same page that your `storeId` was found on.
 
-* For Visual Studio 2022 on Windows, you will need to
-  1) Right-click the project in the IDE. In my instance it was the VST3 project in the IDE.
-  2) Ensure that it is set up as the startup project.
-  3) Select `Properties`, then select the build configuration in the top left. You might want to choose Debug if you need to debug.
-  4) Select `Linker>Input>Additional Dependencies`, then add these on separate lines:
-    * Userenv.lib
-    * Ntdll.lib
-    * software_licensor_static_rust_lib.lib
-    * Bcrypt.lib
-    * Ws2_32.lib
-  5) Select `Linker>General>Additional Library Directories` and ensure that the path to the client side Rust library is there, ending with `software-licensor-client-side-library\software_licensor_static_rust_lib\target\x86_64-pc-windows-msvc\release`
-  6) Apply the changes and build in the configuration that you specified.
+## Building with Visual Studio 2022 on Windows
+
+For Visual Studio 2022 on Windows, you will need to
+
+1) Right-click the project in the IDE. In my instance it was the VST3 project in the IDE.
+2) Ensure that it is set up as the startup project.
+3) Select `Properties`, then select the build configuration in the top left. You might want to choose Debug if you need to debug.
+4) Select `Linker>Input>Additional Dependencies`, then add these on separate lines:
+  * Userenv.lib
+  * Ntdll.lib
+  * software_licensor_static_rust_lib.lib
+  * Bcrypt.lib
+  * Ws2_32.lib
+5) Select `Linker>General>Additional Library Directories` and ensure that the path to the client side Rust library is there, ending with `software-licensor-client-side-library\software_licensor_static_rust_lib\target\x86_64-pc-windows-msvc\release`
+6) Apply the changes and build in the configuration that you specified.
+
+## Building with XCode on MacOS
+
+Build the rust static library using `software_licensor_static_rust_lib/build_mac.sh`.
+
+For XCode on MacOS... first, if you happen to be using JUCE 7.0.7, you'll need to download both version 7.0.7 and 7.0.8 of JUCE. Build the Projucer from 7.0.8 and use that with JUCE 7.0.7 for setting the source files, and then export the project to XCode. The reason for this is that there's an issue with the XCode project generation in JUCE 7.0.7 that might cause some build errors. Then,
+
+1) Open the project navigator by clicking the folder looking icon towards the top left corner of the window, in the left-most tab.
+2) Select your project with the blue icon to the left of it.
+3) Choose `File>Add Files to "Your Project Name"`
+4) Ensure that the proper targets are selected before adding this file, then locate the universal library file in `software_licensor_static_rust_lib/target/universal` and select it, or select its parent folder if you are unable to select the file itself.
+5) Select a desired scheme in `Product>Scheme` and build it.
+
+If there are any issues with the build, consider adding the path to `software_licensor_static_rust_lib/target/universal` into `Projucer>Exporters>XCode>Debug/Release>Extra Library Search Paths`.
 
 ## Potential Issues with the JUCE code
 
