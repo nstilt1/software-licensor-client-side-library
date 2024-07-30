@@ -12,7 +12,17 @@ include_directories(include)
 add_executable(cpp_test main.cpp)
 
 # Link against the Rust library
-target_link_libraries(cpp_test ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/release/libsoftware_licensor_static_rust_lib.a)
+if(WIN32)
+    target_link_libraries(cpp_test 
+        ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/x86_64-pc-windows-msvc/release/software_licensor_static_rust_lib.lib
+        Userenv
+        Ntdll
+        Bcrypt
+        Ws2_32
+    )
+else()
+    target_link_libraries(cpp_test ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/release/libsoftware_licensor_static_rust_lib.a)
+endif()
 # Assuming the Rust library outputs to the target/release directory
 
 # Include pthread if using std::thread or other threading features in C++

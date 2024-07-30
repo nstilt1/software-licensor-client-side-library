@@ -3,7 +3,7 @@
 
     SoftwareLicensorUnlockForm.cpp
     Created: 24 Jul 2024 6:16:43pm
-    Author:  somed
+    Author:  Noah Stiltner
 
   ==============================================================================
 */
@@ -27,18 +27,11 @@ struct SoftwareLicensorUnlockForm::OverlayComp : public juce::Component,
     private juce::Timer,
     private juce::Button::Listener
 {
-    OverlayComp (SoftwareLicensorUnlockForm& f, bool hasCancelButton = false)
+    OverlayComp (SoftwareLicensorUnlockForm& f)
         : juce::Thread(juce::String()), form(f)
     {
         licenseCode = form.licenseCodeBox.getText();
         addAndMakeVisible(spinner);
-
-        if (hasCancelButton)
-        {
-            cancelButton.reset(new juce::TextButton(TRANS("Cancel")));
-            addAndMakeVisible(cancelButton.get());
-            cancelButton->addListener(this);
-        }
 
         startThread(Priority::normal);
     }
@@ -123,14 +116,12 @@ struct SoftwareLicensorUnlockForm::OverlayComp : public juce::Component,
 
 SoftwareLicensorUnlockForm::SoftwareLicensorUnlockForm(SoftwareLicensorStatus& s,
     const juce::String& userInstructions,
-    bool hasCancelButton,
-    bool overlayHasCancelButton)
+    bool hasCancelButton)
     : message(juce::String(), userInstructions),
     licenseCodeBox(juce::String()),
     activateButton(TRANS("Register")),
     cancelButton(TRANS("Cancel")),
-    status(s),
-    showOverlayCancelButton(overlayHasCancelButton)
+    status(s)
 {
     // supply a message to tell your users what to do
     jassert(userInstructions.isNotEmpty());
@@ -149,6 +140,7 @@ SoftwareLicensorUnlockForm::SoftwareLicensorUnlockForm(SoftwareLicensorStatus& s
 
     licenseCodeBox.setEscapeAndReturnKeysConsumed(false);
 
+    addAndMakeVisible(activateButton);
     activateButton.addShortcut(juce::KeyPress(juce::KeyPress::returnKey));
 
     activateButton.addListener(this);
@@ -165,7 +157,7 @@ SoftwareLicensorUnlockForm::~SoftwareLicensorUnlockForm()
 
 void SoftwareLicensorUnlockForm::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colours::lightgrey);
+    g.fillAll(juce::Colours::darkslategrey);
 }
 
 void SoftwareLicensorUnlockForm::resized()
@@ -206,11 +198,10 @@ void SoftwareLicensorUnlockForm::resized()
     licenseCodeBox.setInputRestrictions(35, juce::String("abcdefABCDEF1234567890-olinOLIN"));
     licenseCodeBox.setFont(font);
 
-    r.removeFromBottom(20);
-
-    message.setBounds(r);
     r.removeFromBottom(24);
-    shareHardwareInfoButton.setBounds(r);
+    shareHardwareInfoButton.setBounds(r.removeFromBottom(24));
+
+    message.setBounds(r.removeFromBottom(24));
 
     if (unlockingOverlay != nullptr)
         unlockingOverlay->setBounds(getLocalBounds());
@@ -255,7 +246,7 @@ void SoftwareLicensorUnlockForm::attemptRegistration()
     {
         if (licenseCodeBox.getText().trim().length() < 16)
         {
-            showBubbleMessage(TRANS("Please enter a valid email address!"), licenseCodeBox);
+            showBubbleMessage(TRANS("Please enter a valid license code!"), licenseCodeBox);
             return;
         }
 
@@ -263,7 +254,7 @@ void SoftwareLicensorUnlockForm::attemptRegistration()
 
         status.update_machine_information(shareHardwareInfo);
 
-        addAndMakeVisible(unlockingOverlay = new OverlayComp(*this, showOverlayCancelButton));
+        addAndMakeVisible(unlockingOverlay = new OverlayComp(*this));
         resized();
         unlockingOverlay->enterModalState();
     }

@@ -44,5 +44,47 @@ int main() {
     std::cout << "Error message: " << data_2->error_message << std::endl;
 
     free_license_data(data_2);
+
+
+    update_machine_info(
+        company_name, 
+        false, // not sending fake data to the service
+        "Test OS Name", 
+        "Test computer name", 
+        true, 
+        "test language1", 
+        "test language2", 
+        4, 
+        6, 
+        3000, 
+        1024, 
+        2048, 
+        "Test vendor", 
+        "Cpu model", 
+        false, 
+        false, 
+        true, 
+        true, 
+        true, 
+        true, 
+        true, 
+        true, 
+        true, 
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+    );
+    std::cout << "Updated machine info" << std::endl;
     return 0;
 }

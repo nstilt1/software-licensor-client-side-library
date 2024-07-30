@@ -3,7 +3,7 @@
 
     SoftwareLicensorMarketplaceStatus.h
     Created: 23 Jul 2024 3:46:53pm
-    Author:  somed
+    Author:  Noah Stiltner
 
   ==============================================================================
 */
@@ -146,6 +146,8 @@ public:
         for (const auto& juceStr : productIdsAndPubkeys) {
             product_cstrings.push_back(juceStr.getCharPointer().getAddress());
         }
+
+        auto companyName = this->getCompanyName();
         
         auto license_data = read_reply_from_webserver(
             this->getCompanyName().getCharPointer().getAddress(),
@@ -175,6 +177,8 @@ public:
         for (const auto& juceStr : productIdsAndPubkeys) {
             product_cstrings.push_back(juceStr.getCharPointer().getAddress());
         }
+
+        auto companyName = this->getCompanyName();
 
         auto license_data = check_license(
             this->getCompanyName().getCharPointer().getAddress(),
@@ -221,47 +225,7 @@ public:
      * server's stored value with `None` as well.
      * @param should_update 
      */
-    void update_machine_information(bool should_update) {
-        update_machine_info(
-            this->getCompanyName().getCharPointer().getAddress(),
-            should_update,
-            juce::SystemStats::getOperatingSystemName().getCharPointer().getAddress(),
-            juce::SystemStats::getComputerName().getCharPointer().getAddress(),
-            juce::SystemStats::isOperatingSystem64Bit(),
-            juce::SystemStats::getUserLanguage().getCharPointer().getAddress(),
-            juce::SystemStats::getDisplayLanguage().getCharPointer().getAddress(),
-            juce::SystemStats::getNumCpus(),
-            juce::SystemStats::getNumPhysicalCpus(),
-            juce::SystemStats::getCpuSpeedInMegahertz(),
-            juce::SystemStats::getMemorySizeInMegabytes(),
-            juce::SystemStats::getPageSize(),
-            juce::SystemStats::getCpuVendor().getCharPointer().getAddress(),
-            juce::SystemStats::getCpuModel().getCharPointer().getAddress(),
-            juce::SystemStats::hasMMX(),
-            juce::SystemStats::has3DNow(),
-            juce::SystemStats::hasFMA3(),
-            juce::SystemStats::hasFMA4(),
-            juce::SystemStats::hasSSE(),
-            juce::SystemStats::hasSSE2(),
-            juce::SystemStats::hasSSE3(),
-            juce::SystemStats::hasSSSE3(),
-            juce::SystemStats::hasSSE41(),
-            juce::SystemStats::hasSSE42(),
-            juce::SystemStats::hasAVX(),
-            juce::SystemStats::hasAVX2(),
-            juce::SystemStats::hasAVX512F(),
-            juce::SystemStats::hasAVX512BW(),
-            juce::SystemStats::hasAVX512CD(),
-            juce::SystemStats::hasAVX512DQ(),
-            juce::SystemStats::hasAVX512ER(),
-            juce::SystemStats::hasAVX512IFMA(),
-            juce::SystemStats::hasAVX512PF(),
-            juce::SystemStats::hasAVX512VBMI(),
-            juce::SystemStats::hasAVX512VL(),
-            juce::SystemStats::hasAVX512VPOPCNTDQ(),
-            juce::SystemStats::hasNeon()
-        );
-    }
+    void update_machine_information(bool should_update);
 
     /**
      * @brief Returns the license status. Values below 0 are errors such as file IO
@@ -324,25 +288,64 @@ public:
         if (getLicenseStatusCode() < 1)
             return status.getProperty(errorProp);
 
+        juce::String enFileContents = R"(
+language: English
+
+"licenseActivated" = "Your license has been successfully activated."
+"licenseNotFound" = "No license found."
+"licenseMachineLimit" = "Your license has reached the machine limit."
+"trialEnded" = "Your trial has ended."
+"licenseInactive" = "Your license is no longer active."
+"offlineCodeIncorrect" = "Your offline code was incorrect."
+"offlineCodesDisabled" = "Offline codes are not enabled for this product."
+"licenseCodeInvalid" = "The license code was invalid."
+"machineDeactivated" = "This machine has been deactivated."
+)";
         auto language = juce::SystemStats::getDisplayLanguage().substring(0,2);
         if (language == "en") 
         {
-            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings("Resources/Texts_en.properties", true));
+            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(enFileContents, true));
             juce::LocalisedStrings::setCurrentMappings(strings.release());
         }
         else if (language == "fr") 
         {
-            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings("Resources/Texts_fr.properties", true));
+            juce::String fileContents = R"(
+language: French
+
+"licenseActivated" = "Votre licence a été activée avec succès."
+"licenseNotFound" = "Aucune licence trouvée."
+"licenseMachineLimit" = "Votre licence a atteint la limite de machines."
+"trialEnded" = "Votre période d'essai est terminée."
+"licenseInactive" = "Votre licence n'est plus active."
+"offlineCodeIncorrect" = "Votre code hors ligne était incorrect."
+"offlineCodesDisabled" = "Les codes hors ligne ne sont pas activés pour ce produit."
+"licenseCodeInvalid" = "Le code de licence était invalide."
+"machineDeactivated" = "Cette machine a été désactivée."
+)";
+            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(fileContents, true));
             juce::LocalisedStrings::setCurrentMappings(strings.release());
         }
         else if (language == "es") 
         {
-            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings("Resources/Texts_es.properties", true));
+            juce::String fileContents = R"(
+language: Spanish
+
+"licenseActivated" = "Su licencia ha sido activada exitosamente."
+"licenseNotFound" = "No se encontró ninguna licencia."
+"licenseMachineLimit" = "Su licencia ha alcanzado el límite de máquinas."
+"trialEnded" = "Su prueba ha terminado."
+"licenseInactive" = "Su licencia ya no está activa."
+"offlineCodeIncorrect" = "Su código offline fue incorrecto."
+"offlineCodesDisabled" = "Los códigos offline no están habilitados para este producto."
+"licenseCodeInvalid" = "El código de licencia no es válido."
+"machineDeactivated" = "Esta máquina ha sido desactivada."
+)";
+            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(fileContents, true));
             juce::LocalisedStrings::setCurrentMappings(strings.release());
         }
         else 
         {
-            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings("Resources/Texts_en.properties", true));
+            std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(enFileContents, true));
             juce::LocalisedStrings::setCurrentMappings(strings.release());
         }
         
