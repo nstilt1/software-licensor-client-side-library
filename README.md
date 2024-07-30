@@ -4,7 +4,7 @@ This repo contains the client side code for the Software Licensor API.
 
 # Status
 
-The static Rust library currently seems to work when called from C++. I still need to make a JUCE library that provides a GUI for the user, as well as providing some inputs for the developer for their store ID and whatnot.
+The static Rust library currently seems to work when called from C++. The JUCE code also seems to work on Windows. I have not tried building it on MacOS yet.
 
 # Building
 
