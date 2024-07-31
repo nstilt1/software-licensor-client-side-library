@@ -4,9 +4,16 @@ use std::time::SystemTimeError;
 pub enum Error {
     LicensingError(u32), // a licensing error
     ApiError(String), // an API error
+    /// An IO error. This is usually caused when the program does not have sufficient 
+    /// privileges to write to the output file
     IoError,
+    /// This error should not happen; it is mainly here to prevent undefined behavior
+    /// from panics
     OptionError(String),
+    /// Crypto errors can occur when the code has been tampered with
     CryptoError(String),
+    /// This error might happen when the server is unreachable, but could occur for
+    /// other reasons.
     ReqwestError(reqwest::Error),
     SystemTimeError,
 }

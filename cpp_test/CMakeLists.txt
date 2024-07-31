@@ -14,7 +14,7 @@ add_executable(cpp_test main.cpp)
 # Link against the Rust library
 if(WIN32)
     target_link_libraries(cpp_test 
-        ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/x86_64-pc-windows-msvc/release/software_licensor_static_rust_lib.lib
+        ${CMAKE_SOURCE_DIR}/../software_licensor_static_rust_lib/target/x86_64-pc-windows-msvc/release/softwarelicensor.lib
         Userenv
         Ntdll
         Bcrypt

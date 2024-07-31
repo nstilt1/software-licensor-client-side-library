@@ -57,11 +57,27 @@ pub(crate) fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, E
     Ok(Path::new(&dir_path).to_owned())
 }
 
+fn get_fallback_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
+    #[cfg(target_os = "windows")]
+    let user_data_path = format!(
+        "{}\\{}\\license.bin",
+        std::env::var("LOCALAPPDATA").unwrap(),
+        company_name_str
+    );
+    #[cfg(not(target_os = "windows"))]
+    let user_data_path = format!("/{}/license.bin", company_name_str);
+    
+    Ok(Path::new(&user_data_path).to_owned())
+}
+
 pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<ClientSideDataStorage, Error> {
     let path = get_license_file_path(company_name_str)?;
     
     if path.exists() {
-        let mut file = File::open(path)?;
+        let mut file = match File::open(path) {
+            Ok(v) => v,
+            Err(_) => File::open(get_fallback_license_file_path(company_name_str)?)?
+        };
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         match ClientSideDataStorage::decode_length_delimited(buffer.as_slice()) {
@@ -90,7 +106,11 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
     } else {
         // path does not exist
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            if let Err(_) = fs::create_dir_all(parent) {
+                if let Some(parent) = get_fallback_license_file_path(company_name_str)?.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+            }
         }
         let mut data_storage = ClientSideDataStorage {
             license_activation_response: None,
