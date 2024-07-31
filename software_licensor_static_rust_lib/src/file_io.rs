@@ -24,7 +24,10 @@ fn has_permissions(path: &PathBuf) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
+/// Gets the path to where the license file will be created.
+/// 
+/// Only MacOS has a fallback to a user-specific path.
+fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
     #[cfg(target_os = "windows")]
     let dir_path = format!("C:\\ProgramData\\{}\\license.bin", company_name_str);
     #[cfg(target_os = "macos")]
@@ -35,10 +38,12 @@ pub(crate) fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, E
         if has_permissions(&p) {
             dir_path
         } else {
+            // home_dir() should work on MacOS
             std::env::home_dir()
                 .unwrap_or("IOError/".into())
                 .join("Library/Application Support/")
                 .join(company_name_str)
+                .join("license.bin")
                 .to_str()
                 .expect("Should be valid")
                 .to_string()
@@ -57,27 +62,11 @@ pub(crate) fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, E
     Ok(Path::new(&dir_path).to_owned())
 }
 
-fn get_fallback_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
-    #[cfg(target_os = "windows")]
-    let user_data_path = format!(
-        "{}\\{}\\license.bin",
-        std::env::var("LOCALAPPDATA").unwrap(),
-        company_name_str
-    );
-    #[cfg(not(target_os = "windows"))]
-    let user_data_path = format!("/{}/license.bin", company_name_str);
-    
-    Ok(Path::new(&user_data_path).to_owned())
-}
-
 pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<ClientSideDataStorage, Error> {
     let path = get_license_file_path(company_name_str)?;
     
     if path.exists() {
-        let mut file = match File::open(path) {
-            Ok(v) => v,
-            Err(_) => File::open(get_fallback_license_file_path(company_name_str)?)?
-        };
+        let mut file = File::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         match ClientSideDataStorage::decode_length_delimited(buffer.as_slice()) {
@@ -106,11 +95,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
     } else {
         // path does not exist
         if let Some(parent) = path.parent() {
-            if let Err(_) = fs::create_dir_all(parent) {
-                if let Some(parent) = get_fallback_license_file_path(company_name_str)?.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-            }
+            fs::create_dir_all(parent)?;
         }
         let mut data_storage = ClientSideDataStorage {
             license_activation_response: None,
