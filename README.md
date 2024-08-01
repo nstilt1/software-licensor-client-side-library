@@ -16,6 +16,8 @@ Below, there are some general notes about our compatibility with different opera
 
 This library is compatible with Windows. When saving license files, the default location is a system-wide location at `C:\ProgramData\[company name]\license.bin`. If you get an `IOError` when your application is trying to read and write from here, then you will need to either update the permissions of the application, or change the path in the code. This path is set in `file_io.rs` in `get_license_file_path()`.
 
+I've tested with `cpp_test` on a Windows 11 standard user account, making sure that the folder `C:\ProgramData\SoftwareLicensorTestCompany` did not already exist, and the test was successful.
+
 ### MacOS ✅
 
 This library is compatible with MacOS. It will try to write to the system-wide location at `/Library/Application Support/[company name]/license.bin`. If the app is lacking permissions, it will write to a user-specific location at `~/Library/Application Support/[company name]/license.bin`
