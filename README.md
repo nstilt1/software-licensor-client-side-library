@@ -59,6 +59,41 @@ You will need to override the following members of the `SoftwareLicensorStatus` 
 * `getCompanyName()` - this is only for making a directory in the end user's machine. See `get_license_file_path()` in `file_io.rs`.
 * `getProductIdsAndPubkeys()` - a vector of product IDs and their public keys separated by a semicolon. You could define multiple IDs and Public Keys for a piece of software if it is included in a bundle, as well as distributed individually. The product IDs and public keys can be found on the same page that your `storeId` was found on.
 
+### Example
+
+```cpp
+class MyLicensingStatus : public SoftwareLicensorStatus
+{
+public:
+    juce::String getStoreId() override
+    {
+        return juce::String("MyStoreID");
+    }
+
+    juce::String getCompanyName() override
+    {
+        return juce::String("MyCompanyName");
+    }
+
+    std::vector<juce::String> getProductIdsAndPubkeys() override
+    {
+        std::vector<juce::String> productIdsAndPubkeys;
+
+        productIdsAndPubkeys.push_back("MyProductID;Base64PublicKey==");
+        productIdsAndPubkeys.push_back("MyBundleProductID;Base64PublicKey==");
+        return productIdsAndPubkeys;
+    }
+};
+```
+
+You may wish to make a user module that has overridden `getStoreId()` and `getCompanyName()`, so that way all of your software will use the same directory and store ID.
+
+Then in the `pluginProcessor.h` constructor, you will want to call `unlockStatus.check_license_with_potential_api_request` to initialize the licensing status. There needs to be occasional API requests to renew the license's expiration so that machines can be removed from the license via the store's `Regenerate License` button.
+
+Elsewhere in the code, you can call `unlockStatus.check_license_with_no_api_request()` which will update the result of `unlockStatus.isUnlocked()` based on the locally stored license key file, which contains a product-specific signature from the server. This signature could be altered, but it has 192 bits of security, making the signature unlikely to be cracked directly.
+
+Finally, when you want to check if the plugin is unlocked, you can call `unlockStatus.isUnlocked()`. The other functions will also return this value, but you might not want to call them within the `processBlock` because they both initiate file reads and may take some time to complete.
+
 ### Building with Visual Studio 2022 on Windows
 
 For Visual Studio 2022 on Windows, you will need to
