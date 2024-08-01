@@ -8,6 +8,8 @@
   ==============================================================================
 */
 
+#pragma once
+
 #include "SoftwareLicensorUnlockForm.h"
 
 struct Spinner : public juce::Component,
