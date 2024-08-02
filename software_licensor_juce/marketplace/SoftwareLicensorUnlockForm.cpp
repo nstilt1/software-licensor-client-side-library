@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "SoftwareLicensorUnlockForm.h"
+namespace software_licensor {
 
 struct Spinner : public juce::Component,
     private juce::Timer
@@ -265,4 +265,5 @@ void SoftwareLicensorUnlockForm::attemptRegistration()
 void SoftwareLicensorUnlockForm::dismiss()
 {
     delete this;
+}
 }

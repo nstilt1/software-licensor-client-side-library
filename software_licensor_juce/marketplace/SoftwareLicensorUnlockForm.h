@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "SoftwareLicensorStatus.h"
+namespace software_licensor {
 
 /**
  * @brief This is pretty much a carbon copy of juce_OnlineUnlockForm.h, but it uses
@@ -78,3 +78,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SoftwareLicensorUnlockForm)
 };
+
+}

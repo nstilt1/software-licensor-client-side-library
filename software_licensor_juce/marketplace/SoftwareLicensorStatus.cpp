@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "SoftwareLicensorStatus.h"
-
 #if JUCE_MODULE_AVAILABLE_juce_data_structures
 const char* SoftwareLicensorStatus::licenseStatusProp = "L";
 const char* SoftwareLicensorStatus::firstNameProp = "first";

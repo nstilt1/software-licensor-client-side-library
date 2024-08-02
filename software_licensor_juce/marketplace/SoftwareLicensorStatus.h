@@ -12,8 +12,6 @@
 
 extern "C" {
 #include <cstdint>
-#include <juce_core/juce_core.h>
-#include <juce_product_unlocking/juce_product_unlocking.h>
 
     /**
      * License data returned by the static Rust library. This must be freed
@@ -108,6 +106,8 @@ extern "C" {
         bool has_neon
     );
 }
+
+namespace software_licensor {
 
 class SoftwareLicensorStatus
 {
@@ -399,3 +399,4 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE(SoftwareLicensorStatus)
 };
+}
