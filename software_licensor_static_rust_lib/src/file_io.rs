@@ -264,14 +264,12 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     if key_file.expiration_timestamp < now {
         if !should_send_request {
-            remove_key_files(&mut license_file, &product_ids, company_name_str);
             return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32));
         }
         // send request to check for an update
         match activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
             Ok(_) => (),
             Err(_) => {
-                remove_key_files(&mut license_file, &product_ids, company_name_str);
                 return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
             }
         }
