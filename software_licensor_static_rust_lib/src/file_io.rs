@@ -247,7 +247,7 @@ pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, p
 }
 
 #[inline(always)]
-pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str, product_ids_and_pubkeys: &HashMap<String, String>, machine_id: &str, is_fresh_request: bool) -> Result<LicenseData, Error> {
+pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str, product_ids_and_pubkeys: &HashMap<String, String>, machine_id: &str, should_send_request: bool) -> Result<LicenseData, Error> {
     let mut license_file = get_or_init_license_file(company_name_str).await?;
     let license_code = match license_file.license_code.len() < 16 {
         true => return Err(Error::LicensingError(2)),
@@ -263,7 +263,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     if key_file.expiration_timestamp < now {
-        if !is_fresh_request {
+        if !should_send_request {
             remove_key_files(&mut license_file, &product_ids, company_name_str);
             return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32));
         }
@@ -286,7 +286,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
             return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
         }
     }
-    if key_file.check_back_timestamp < now {
+    if key_file.check_back_timestamp < now && should_send_request {
         // send request
         if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
             (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {

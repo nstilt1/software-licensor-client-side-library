@@ -250,7 +250,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
                 }
             }
         };
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true).await {
+        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false).await {
             Ok(v) => return box_out!(v),
             Err(e) => {
                 match e {
@@ -308,7 +308,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false).await {
+        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true).await {
             Ok(v) => {
                 box_out!(v)
             },
@@ -363,7 +363,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true).await {
+        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false).await {
             Ok(v) => {
                 return box_out!(v)
             },
