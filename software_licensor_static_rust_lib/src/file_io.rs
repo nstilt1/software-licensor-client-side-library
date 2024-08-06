@@ -259,7 +259,6 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
         Err(licensing_error) => return handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error)
     };
     if key_file.message_code != 1 {
-        remove_key_files(&mut license_file, &product_ids, company_name_str);
         return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32));
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
