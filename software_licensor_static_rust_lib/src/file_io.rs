@@ -143,7 +143,7 @@ pub(crate) fn save_license_file(data_storage: &ClientSideDataStorage, company_na
 pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_ids: &Vec<&String>) -> Result<(LicenseKeyFile, Signature, LicenseActivationResponse), Error> {
     let license_activation_response = match &data_storage.license_activation_response {
         Some(v) => v,
-        None => return Err(Error::LicensingError(2))
+        None => return Err(Error::LicensingError((2, "".into())))
     };
     // get all license key files for the valid product ids. These product ids 
     // could include bundled products as opposed to just the individual product
@@ -160,11 +160,11 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
         let product_id = &key_file.product_id;
         let sig_bytes = match license_activation_response.key_file_signatures.get(product_id) {
             Some(v) => v,
-            None => return Err(Error::LicensingError(2))
+            None => return Err(Error::LicensingError((2, key_file.license_code.clone())))
         };
         let signature: Signature = match Signature::from_bytes(sig_bytes.as_slice().into()) {
             Ok(v) => v,
-            Err(_) => return Err(Error::LicensingError(2))
+            Err(_) => return Err(Error::LicensingError((2, key_file.license_code.clone())))
         };
         return Ok((key_file.clone(), signature, license_activation_response.clone()))
     }
@@ -177,19 +177,19 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
             }
         });
         if error_codes.is_empty() {
-            return Err(Error::LicensingError(2))
+            return Err(Error::LicensingError((2, data_storage.license_code.clone())))
         }
         // prioritizing specific licensing errors over others
         if error_codes.contains(&4) { // machine limit reached
-            return Err(Error::LicensingError(4))
+            return Err(Error::LicensingError((4, data_storage.license_code.clone())))
         }
         if error_codes.contains(&16) { // license no longer active
-            return Err(Error::LicensingError(16))
+            return Err(Error::LicensingError((16, data_storage.license_code.clone())))
         }
         if error_codes.contains(&8) { // trial ended
-            return Err(Error::LicensingError(8))
+            return Err(Error::LicensingError((8, data_storage.license_code.clone())))
         }
-        return Err(Error::LicensingError(error_codes[0]))
+        return Err(Error::LicensingError((error_codes[0], data_storage.license_code.clone())))
     }
     found_key_files.sort_unstable_by(|a, b| {
         let a_success = a.message_code == 1;
@@ -205,11 +205,11 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
     let product_id = &key_file.product_id;
     let sig_bytes = match license_activation_response.key_file_signatures.get(product_id) {
         Some(v) => v,
-        None => return Err(Error::LicensingError(2))
+        None => return Err(Error::LicensingError((2, key_file.license_code.clone())))
     };
     let signature: Signature = match Signature::from_bytes(sig_bytes.as_slice().into()) {
         Ok(v) => v,
-        Err(_) => return Err(Error::LicensingError(2))
+        Err(_) => return Err(Error::LicensingError((2, key_file.license_code.clone())))
     };
     Ok((key_file.clone(), signature, license_activation_response.clone()))
 }
@@ -235,9 +235,9 @@ pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product
 #[inline(always)]
 pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: Error) -> Result<LicenseData, Error> {
     match licensing_error {
-        Error::LicensingError(e) => {
+        Error::LicensingError((e, license_code)) => {
             remove_key_files(license_file, product_ids, company_name_str);
-            Ok(LicenseData::licensing_error(e as i32))
+            Ok(LicenseData::licensing_error(e as i32, &license_code))
         },
         _ => {
             remove_key_files(license_file, product_ids, company_name_str);
@@ -250,7 +250,7 @@ pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, p
 pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str, product_ids_and_pubkeys: &HashMap<String, String>, machine_id: &str, should_send_request: bool) -> Result<LicenseData, Error> {
     let mut license_file = get_or_init_license_file(company_name_str).await?;
     let license_code = match license_file.license_code.len() < 16 {
-        true => return Err(Error::LicensingError(2)),
+        true => return Err(Error::LicensingError((2, license_file.license_code))),
         false => license_file.license_code.clone()
     };
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
@@ -296,17 +296,17 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
 
     if machine_id.ne(&key_file.machine_id) {
         remove_key_files(&mut license_file, &product_ids, company_name_str);
-        return Err(Error::LicensingError(2))
+        return Err(Error::LicensingError((2, license_code)))
     }
     
     // verify signature on the key file
     let pubkey_b64 = match product_ids_and_pubkeys.get(&key_file.product_id) {
         Some(v) => v,
-        None => return Err(Error::LicensingError(2))
+        None => return Err(Error::LicensingError((2, license_code)))
     };
     let decoded_pubkey = match BASE64_STANDARD.decode(pubkey_b64) {
         Ok(v) => v,
-        Err(_) => return Err(Error::LicensingError(2))
+        Err(_) => return Err(Error::LicensingError((2, license_code)))
     };
 
     let bytes = key_file.encode_length_delimited_to_vec();
@@ -314,14 +314,14 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
         Ok(v) => v,
         Err(_) => {
             remove_key_files(&mut license_file, &product_ids, company_name_str);
-            return Err(Error::LicensingError(2))
+            return Err(Error::LicensingError((2, license_code)))
         }
     };
     match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(bytes), &signature) {
         Ok(_) => Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32)),
         Err(_) => {
             remove_key_files(&mut license_file, &product_ids, company_name_str);
-            Err(Error::LicensingError(2))
+            Err(Error::LicensingError((2, license_code)))
         }
     }
 }

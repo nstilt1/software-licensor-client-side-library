@@ -27,6 +27,7 @@ extern "C" {
         char* license_type;
         char* version;
         char* error_message;
+        char* license_code;
     };
 
     /**
@@ -267,6 +268,10 @@ public:
         return status.getProperty(licenseTypeProp);
     }
 
+    juce::String getLicenseCode() {
+        return status.getProperty(licenseCodeProp);
+    }
+
     /**
      * @brief Gets the version of this software that the cloud has a record of.
      * 
@@ -312,15 +317,15 @@ language: English
             juce::String fileContents = R"(
 language: French
 
-"licenseActivated" = "Votre licence a été activée avec succès."
-"licenseNotFound" = "Aucune licence trouvée."
+"licenseActivated" = "Votre licence a ï¿½tï¿½ activï¿½e avec succï¿½s."
+"licenseNotFound" = "Aucune licence trouvï¿½e."
 "licenseMachineLimit" = "Votre licence a atteint la limite de machines."
-"trialEnded" = "Votre période d'essai est terminée."
+"trialEnded" = "Votre pï¿½riode d'essai est terminï¿½e."
 "licenseInactive" = "Votre licence n'est plus active."
-"offlineCodeIncorrect" = "Votre code hors ligne était incorrect."
-"offlineCodesDisabled" = "Les codes hors ligne ne sont pas activés pour ce produit."
-"licenseCodeInvalid" = "Le code de licence était invalide."
-"machineDeactivated" = "Cette machine a été désactivée."
+"offlineCodeIncorrect" = "Votre code hors ligne ï¿½tait incorrect."
+"offlineCodesDisabled" = "Les codes hors ligne ne sont pas activï¿½s pour ce produit."
+"licenseCodeInvalid" = "Le code de licence ï¿½tait invalide."
+"machineDeactivated" = "Cette machine a ï¿½tï¿½ dï¿½sactivï¿½e."
 )";
             std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(fileContents, true));
             juce::LocalisedStrings::setCurrentMappings(strings.release());
@@ -331,14 +336,14 @@ language: French
 language: Spanish
 
 "licenseActivated" = "Su licencia ha sido activada exitosamente."
-"licenseNotFound" = "No se encontró ninguna licencia."
-"licenseMachineLimit" = "Su licencia ha alcanzado el límite de máquinas."
+"licenseNotFound" = "No se encontrï¿½ ninguna licencia."
+"licenseMachineLimit" = "Su licencia ha alcanzado el lï¿½mite de mï¿½quinas."
 "trialEnded" = "Su prueba ha terminado."
-"licenseInactive" = "Su licencia ya no está activa."
-"offlineCodeIncorrect" = "Su código offline fue incorrecto."
-"offlineCodesDisabled" = "Los códigos offline no están habilitados para este producto."
-"licenseCodeInvalid" = "El código de licencia no es válido."
-"machineDeactivated" = "Esta máquina ha sido desactivada."
+"licenseInactive" = "Su licencia ya no estï¿½ activa."
+"offlineCodeIncorrect" = "Su cï¿½digo offline fue incorrecto."
+"offlineCodesDisabled" = "Los cï¿½digos offline no estï¿½n habilitados para este producto."
+"licenseCodeInvalid" = "El cï¿½digo de licencia no es vï¿½lido."
+"machineDeactivated" = "Esta mï¿½quina ha sido desactivada."
 )";
             std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(fileContents, true));
             juce::LocalisedStrings::setCurrentMappings(strings.release());
@@ -378,6 +383,7 @@ private:
             status.setProperty(licenseTypeProp, data->license_type, nullptr);
             status.setProperty(versionProp, data->version, nullptr);
             status.setProperty(errorProp, data->error_message, nullptr);
+            status.setProperty(licenseCodeProp, data->license_code, nullptr);
         } else {
             status.setProperty(firstNameProp, data->customer_first_name, nullptr);
             status.setProperty(lastNameProp, data->customer_last_name, nullptr);
@@ -385,6 +391,7 @@ private:
             status.setProperty(licenseTypeProp, data->license_type, nullptr);
             status.setProperty(versionProp, data->version, nullptr);
             status.setProperty(errorProp, data->error_message, nullptr);
+            status.setProperty(licenseCodeProp, "", nullptr);
         }
         free_license_data(data);
     }
@@ -396,6 +403,7 @@ private:
     static const char* licenseTypeProp;
     static const char* versionProp;
     static const char* errorProp;
+    static const char* licenseCodeProp;
 
     JUCE_DECLARE_NON_COPYABLE(SoftwareLicensorStatus)
 };

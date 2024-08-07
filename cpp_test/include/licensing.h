@@ -15,6 +15,7 @@ extern "C" {
         char* license_type;
         char* version;
         char* error_message;
+        char* license_code;
     };
 
     /**

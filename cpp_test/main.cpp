@@ -26,6 +26,7 @@ int main() {
     std::cout << "License type: " << data->license_type << std::endl;
     std::cout << "Version: " << data->version << std::endl;
     std::cout << "Error message: " << data->error_message << std::endl;
+    std::cout << "License code received: " << data->license_code << std::endl;
 
     free_license_data(data);
 
@@ -42,6 +43,7 @@ int main() {
     std::cout << "License type: " << data_2->license_type << std::endl;
     std::cout << "Version: " << data_2->version << std::endl;
     std::cout << "Error message: " << data_2->error_message << std::endl;
+    std::cout << "License code: " << data_2->license_code << std::endl;
 
     free_license_data(data_2);
 

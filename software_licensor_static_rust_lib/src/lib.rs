@@ -33,11 +33,21 @@ pub struct LicenseData {
     customer_email: *mut c_char,
     license_type: *mut c_char,
     version: *mut c_char,
-    error_message: *mut c_char
+    error_message: *mut c_char,
+    license_code: *mut c_char
 }
 
 impl LicenseData {
-    pub(crate) fn new(int_result: c_int, first_name: &str, last_name: &str, email: &str, license_type: &str, version: &str, error_message: &str) -> Self {
+    pub(crate) fn new(
+        int_result: c_int, 
+        first_name: &str, 
+        last_name: &str, 
+        email: &str, 
+        license_type: &str, 
+        version: &str, 
+        error_message: &str, 
+        license_code: &str
+    ) -> Self {
         Self {
             result_code: int_result,
             customer_first_name: CString::new(first_name).expect("CString::new failed").into_raw(),
@@ -45,17 +55,36 @@ impl LicenseData {
             customer_email: CString::new(email).expect("CString::new failed").into_raw(),
             license_type: CString::new(license_type).expect("CString::new failed").into_raw(),
             version: CString::new(version).expect("CString::new failed").into_raw(),
-            error_message: CString::new(error_message).expect("CString::new failed").into_raw()
+            error_message: CString::new(error_message).expect("CString::new failed").into_raw(),
+            license_code: CString::new(license_code).expect("CString::new failed").into_raw()
         }
     }
     pub(crate) fn error(message: &str) -> Self {
-        Self::new(-1, "Error", "Error", "Error", "Error", "Error", message)
+        Self::new(
+            -1, 
+            "Error", 
+            "Error", 
+            "Error", 
+            "Error", 
+            "Error", 
+            message, 
+            "Error"
+        )
     }
     pub(crate) fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: c_int) -> Self {
-        Self::new(status_code, &license_response.customer_first_name, &license_response.customer_last_name, &license_response.customer_email, &key_file.license_type, &key_file.product_version, "")
+        Self::new(
+            status_code, 
+            &license_response.customer_first_name, 
+            &license_response.customer_last_name, 
+            &license_response.customer_email, 
+            &key_file.license_type, 
+            &key_file.product_version, 
+            "",
+            &key_file.license_code
+        )
     }
-    pub(crate) fn licensing_error(code: c_int) -> Self {
-        Self::new(code, "", "", "", "", "", "")
+    pub(crate) fn licensing_error(code: c_int, license_code: &str) -> Self {
+        Self::new(code, "", "", "", "", "", "", license_code)
     }
 }
 
@@ -202,6 +231,9 @@ pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
             if !data.error_message.is_null() {
                 let _ = CString::from_raw(data.error_message);
             }
+            if !data.license_code.is_null() {
+                let _ = CString::from_raw(data.license_code);
+            }
         }
     }
 }
@@ -245,7 +277,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Ok(()) => (),
             Err(v) => {
                 match v {
-                    Error::LicensingError(e) => return box_out!(LicenseData::licensing_error(e as i32)),
+                    Error::LicensingError((e, _)) => return box_out!(LicenseData::licensing_error(e as i32, license_code_str)),
                     _ => return box_out!(LicenseData::error(&v.to_string()))
                 }
             }
@@ -254,7 +286,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Ok(v) => return box_out!(v),
             Err(e) => {
                 match e {
-                    Error::LicensingError(c) => return box_out!(LicenseData::licensing_error(c as i32)),
+                    Error::LicensingError((c, _)) => return box_out!(LicenseData::licensing_error(c as i32, license_code_str)),
                     _ => return box_out!(LicenseData::error(&e.to_string()))
                 }
             }
@@ -314,8 +346,8 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
             },
             Err(e) => {
                 match e {
-                    Error::LicensingError(v) => {
-                        let r = LicenseData::licensing_error(v as i32);
+                    Error::LicensingError((v, license_code)) => {
+                        let r = LicenseData::licensing_error(v as i32, &license_code);
                         box_out!(r)
                     },
                     _ => {
@@ -369,8 +401,8 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
             },
             Err(e) => {
                 match e {
-                    Error::LicensingError(v) => {
-                        let r = LicenseData::licensing_error(v as i32);
+                    Error::LicensingError((v, license_code)) => {
+                        let r = LicenseData::licensing_error(v as i32, &license_code);
                         return box_out!(r)
                     },
                     _ => {

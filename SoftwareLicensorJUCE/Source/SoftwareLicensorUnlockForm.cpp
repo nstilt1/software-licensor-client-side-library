@@ -139,6 +139,7 @@ SoftwareLicensorUnlockForm::SoftwareLicensorUnlockForm(SoftwareLicensorStatus& s
         addAndMakeVisible(cancelButton);
 
     licenseCodeBox.setEscapeAndReturnKeysConsumed(false);
+    licenseCodeBox.setText(s.getLicenseCode());
 
     addAndMakeVisible(activateButton);
     activateButton.addShortcut(juce::KeyPress(juce::KeyPress::returnKey));

@@ -2,7 +2,7 @@ use std::time::SystemTimeError;
 
 #[derive(Debug)]
 pub enum Error {
-    LicensingError(u32), // a licensing error
+    LicensingError((u32, String)), // a licensing error, along with the license code
     ApiError(String), // an API error
     /// An IO error. This is usually caused when the program does not have sufficient 
     /// privileges to write to the output file
@@ -22,7 +22,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ApiError(s) => f.write_str(s),
-            Self::LicensingError(v) => f.write_str(&v.to_string()),
+            Self::LicensingError((v, _license_code)) => f.write_str(&v.to_string()),
             Self::CryptoError(s) => f.write_str(s),
             Self::OptionError(s) => f.write_str(s),
             Self::IoError => f.write_str("There was an IO error"),

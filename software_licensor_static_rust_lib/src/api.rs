@@ -67,7 +67,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
     let all_product_ids = product_id_hashmap.keys().cloned().collect::<Vec<String>>();
 
     if all_product_ids.is_empty() {
-        return Err(Error::LicensingError(2))
+        return Err(Error::LicensingError((2, "".into())))
     }
 
     let inner_payload = LicenseActivationRequest {
@@ -168,7 +168,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
             Ok(v) => {
                 // there was a licensing error with the request. These come in the
                 // form of powers of 2 
-                return Err(Error::LicensingError(v))
+                return Err(Error::LicensingError((v, license_code.to_string())))
             },
             Err(_) => {
                 // there was a general error with the request

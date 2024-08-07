@@ -18,6 +18,7 @@ const char* SoftwareLicensorStatus::emailProp = "email";
 const char* SoftwareLicensorStatus::licenseTypeProp = "licenseType";
 const char* SoftwareLicensorStatus::versionProp = "version";
 const char* SoftwareLicensorStatus::errorProp = "error";
+const char* SoftwareLicensorStatus::licenseCodeProp = "licenseCode";
 static const char* stateTagName = "REG";
 
 SoftwareLicensorStatus::SoftwareLicensorStatus() : status(stateTagName)
