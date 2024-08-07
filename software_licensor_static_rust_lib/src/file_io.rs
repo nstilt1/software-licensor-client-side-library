@@ -256,7 +256,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
     let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
         Ok(v) => v,
-        Err(licensing_error) => return handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error)
+        Err(licensing_error) => return Err(licensing_error)
     };
     if key_file.message_code != 1 {
         return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32));
