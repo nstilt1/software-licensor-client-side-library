@@ -134,6 +134,29 @@ SoftwareLicensorUnlockForm::SoftwareLicensorUnlockForm(SoftwareLicensorStatus& s
     addAndMakeVisible(message);
     addAndMakeVisible(licenseCodeBox);
     addAndMakeVisible(shareHardwareInfoButton);
+
+    auto language = juce::SystemStats::getDisplayLanguage().substring(0, 2);
+
+    if (language == "fr") {
+        juce::String fileContents = R"(
+language: French
+
+"Sharing your hardware information allows us to design software that is more tailored for the average computer." = "Partager vos informations matérielles nous permet de concevoir des logiciels mieux adaptés à l'ordinateur moyen."
+)";
+        std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(fileContents, true));
+        juce::LocalisedStrings::setCurrentMappings(strings.release());
+    }
+    else if (language == "es") {
+        juce::String fileContents = R"(
+language: Spanish
+
+"Sharing your hardware information allows us to design software that is more tailored for the average computer." = "Compartir la información de su hardware nos permite diseñar software que se adapta mejor al ordenador promedio."
+)";
+        std::unique_ptr<juce::LocalisedStrings> strings(new juce::LocalisedStrings(fileContents, true));
+        juce::LocalisedStrings::setCurrentMappings(strings.release());
+    }
+
+    shareHardwareInfoButton.setTooltip(juce::translate("Sharing your hardware information allows us to design software that is more tailored for the average computer."));
     
     if (hasCancelButton)
         addAndMakeVisible(cancelButton);
