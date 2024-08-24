@@ -336,11 +336,15 @@ pub struct ClientSideDataStorage {
     pub license_activation_response: ::core::option::Option<LicenseActivationResponse>,
     #[prost(message, optional, tag = "2")]
     pub next_server_ecdh_key: ::core::option::Option<CompactServerEcdhKey>,
-    /// optional machine stats; will be None if the user doesn't consent
-    #[prost(message, optional, tag = "3")]
-    pub machine_stats: ::core::option::Option<Stats>,
     #[prost(string, tag = "4")]
     pub license_code: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "5")]
     pub server_ecdsa_key: ::core::option::Option<CompactServerEcdsaKey>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSideHwInfoStorage {
+    /// optional machine stats; will be None if the user doesn't consent
+    #[prost(message, optional, tag = "1")]
+    pub machine_stats: ::core::option::Option<Stats>,
 }
