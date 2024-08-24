@@ -227,8 +227,11 @@ message CompactServerEcdsaKey {
 message ClientSideDataStorage {
     LicenseActivationResponse license_activation_response = 1;
     CompactServerEcdhKey next_server_ecdh_key = 2;
-    // optional machine stats; will be None if the user doesn't consent
-    Stats machine_stats = 3;
     string license_code = 4;
     CompactServerEcdsaKey server_ecdsa_key = 5;
+}
+
+message ClientSideHwInfoStorage {
+    // optional machine stats; will be None if the user doesn't consent
+    Stats machine_stats = 1;
 }

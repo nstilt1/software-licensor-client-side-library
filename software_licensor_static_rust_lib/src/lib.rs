@@ -140,7 +140,7 @@ pub extern "C" fn update_machine_info(
     let users_language_str = parse_c_char!(users_language);
     let display_language_str = parse_c_char!(display_language);
     let cpu_vendor_str = parse_c_char!(cpu_vendor);
-    let cpu_model = parse_c_char!(cpu_model);
+    let cpu_model_str = parse_c_char!(cpu_model);
     let rt = match Runtime::new() {
         Ok(v) => v,
         Err(_) => return
@@ -156,7 +156,8 @@ pub extern "C" fn update_machine_info(
             license_file.machine_stats = None;
             if license_file.machine_stats.is_some() {
                 license_file.machine_stats = None;
-                let _ = save_license_file(&license_file, company_name_str);
+                save_license_file(&license_file, company_name_str).unwrap_or_else(|_| ());
+                sleep(Duration::from_secs(15)).await;
             }
             return
         }
@@ -173,7 +174,7 @@ pub extern "C" fn update_machine_info(
             ram_mb: ram_mb as u32,
             page_size: page_size as u32,
             cpu_vendor: cpu_vendor_str.to_string(),
-            cpu_model: cpu_model.to_string(),
+            cpu_model: cpu_model_str.to_string(),
             has_mmx,
             has_3d_now,
             has_fma3,
@@ -201,7 +202,8 @@ pub extern "C" fn update_machine_info(
 
         if license_file.machine_stats.ne(&current_stats) {
             license_file.machine_stats = current_stats;
-            let _ = save_license_file(&license_file, company_name_str);
+            save_license_file(&license_file, company_name_str).unwrap_or_else(|_| ());
+            sleep(Duration::from_secs(4)).await;
         }
     });
 }

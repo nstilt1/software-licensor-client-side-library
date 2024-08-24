@@ -9,7 +9,7 @@ use prost::Message;
 use sha2::Digest;
 
 use crate::error::Error;
-use crate::generated::software_licensor_client::{ClientSideDataStorage, LicenseActivationResponse, LicenseKeyFile};
+use crate::generated::software_licensor_client::{ClientSideDataStorage, LicenseActivationResponse, LicenseKeyFile, Stats};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::LicenseData;
 
@@ -62,6 +62,44 @@ fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
     Ok(Path::new(&dir_path).to_owned())
 }
 
+/// Gets the path to where the license file will be created.
+/// 
+/// Only MacOS has a fallback to a user-specific path.
+fn get_machine_stats_path() -> Result<PathBuf, Error> {
+    #[cfg(target_os = "windows")]
+    let dir_path = format!("C:\\ProgramData\\HyperformanceSolutions\\hwinfo.bin");
+    #[cfg(target_os = "macos")]
+    let dir_path = {
+        // defaults to a system-wide path, but if the program lacks permissions, we'll write to a user-specific path
+        let dir_path: String = format!("/Library/Application Support/HyperformanceSolutions/hwinfo.bin");
+        let p = Path::new(&dir_path).to_owned();
+        if has_permissions(&p) {
+            dir_path
+        } else {
+            // home_dir() should work on MacOS
+            std::env::home_dir()
+                .unwrap_or("IOError/".into())
+                .join("Library/Application Support/")
+                .join("HyperformanceSolutions")
+                .join("hwinfo.bin")
+                .to_str()
+                .expect("Should be valid")
+                .to_string()
+        }
+    };
+    #[cfg(target_os = "linux")]
+    let dir_path = format!("{}/.local/share/HyperformanceSolutions/hwinfo.bin", std::env::var("HOME")?);
+    #[cfg(target_os = "android")]
+    let dir_path = format!("/data/data/HyperformanceSolutions/files/hwinfo.bin");
+    
+    // instead of panicking in this function, this will return a path that will
+    // probably cause an error
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android")))]
+    let dir_path = format!("/HyperformanceSolutions/hwinfo.bin");
+
+    Ok(Path::new(&dir_path).to_owned())
+}
+
 pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<ClientSideDataStorage, Error> {
     let path = get_license_file_path(company_name_str)?;
     
@@ -71,7 +109,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
         file.read_to_end(&mut buffer)?;
         match ClientSideDataStorage::decode_length_delimited(buffer.as_slice()) {
             Ok(mut data_storage) => {
-                // ensure that the next key before returning
+                // ensure that the next key exists before returning
                 if data_storage.next_server_ecdh_key.is_none() {
                     get_pubkeys(&mut data_storage, true).await?;
                 }
@@ -107,6 +145,27 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
         get_pubkeys(&mut data_storage, true).await?;
         save_license_file(&data_storage, company_name_str)?;
         Ok(data_storage)
+    }
+}
+
+pub(crate) async fn get_or_init_hwinfo_file() -> Result<Stats, Error> {
+    let path = get_machine_stats_path()?;
+
+    if path.exists() {
+        let mut file = File::open(path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer);
+        match Stats::decode_length_delimited(buffer.as_slice()) {
+            Ok(stats) => {
+                Ok(stats)
+            },
+            Err(_) => {
+                Err(Error::IoError)
+                
+            }
+        }
+    } else {
+        Err(Error::IoError)
     }
 }
 
@@ -228,7 +287,7 @@ pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product
         license_response.licensing_errors.remove(*product_id);
     }
     license_file.license_activation_response = Some(license_response);
-    let _ = save_license_file(license_file, company_name_str);
+    save_license_file(license_file, company_name_str).unwrap_or_else(|_| ());
 }
 
 /// Handles licensing errors by removing key files before returning the error
@@ -413,5 +472,14 @@ mod tests {
         let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
+    }
+
+    #[tokio::test]
+    async fn local_file_check() {
+        let file = get_or_init_license_file("AlteredBrainChemistry").await.unwrap();
+        //assert!(file.license_activation_response.is_some(), "License activation response was none");
+        assert!(file.next_server_ecdh_key.is_some());
+        assert!(file.server_ecdsa_key.is_some());
+        assert!(file.machine_stats.is_some(), "Machine stats were none");
     }
 }
