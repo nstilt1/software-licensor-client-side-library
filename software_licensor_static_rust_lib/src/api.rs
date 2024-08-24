@@ -11,7 +11,7 @@ use sha2::{Digest, Sha384};
 
 pub(crate) type EcdsaDigest = Sha384;
 
-use crate::{error::{Error, OptionErrors}, file_io::save_license_file, generated::software_licensor_client::{decrypt_info::ClientEcdhPubkey, ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response}, LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL};
+use crate::{error::{Error, OptionErrors}, file_io::{get_or_init_hwinfo_file, save_license_file}, generated::software_licensor_client::{decrypt_info::ClientEcdhPubkey, ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response}, LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL};
 
 /// Gets the Software Licensor Public Keys.
 pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
@@ -45,8 +45,16 @@ pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ec
 /// Performs an activate_license request.
 /// 
 /// Errors can include cryptography errors, LicensingErrors or ApiErrors.
-pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &str, product_ids: &Vec<&String>, machine_id: &str, license_code: &str, license_file: &mut ClientSideDataStorage) -> Result<(), Error> {
+pub(crate) async fn activate_license_request(
+    store_id: &str, 
+    company_name_str: &str, 
+    product_ids: &Vec<&String>, 
+    machine_id: &str, 
+    license_code: &str, 
+    license_file: &mut ClientSideDataStorage,
+) -> Result<(), Error> {
     license_file.license_code = license_code.to_string();
+    let hw_info = get_or_init_hwinfo_file()?;
 
     let mut product_id_hashmap: HashMap<String, ()> = HashMap::with_capacity(product_ids.len());
     product_ids.iter().for_each(|product_id| {
@@ -73,7 +81,7 @@ pub(crate) async fn activate_license_request(store_id: &str, company_name_str: &
     let inner_payload = LicenseActivationRequest {
         license_code: license_code.to_string(),
         machine_id: machine_id.to_string(),
-        hardware_stats: license_file.machine_stats.clone(),
+        hardware_stats: hw_info.machine_stats.clone(),
         product_ids: all_product_ids,
     };
     let inner_payload_bytes = inner_payload.encode_length_delimited_to_vec();

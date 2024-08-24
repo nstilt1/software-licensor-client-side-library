@@ -7,7 +7,7 @@ use std::ffi::{CString, CStr};
 use std::time::Duration;
 
 use api::activate_license_request;
-use file_io::{check_key_file_async, get_or_init_license_file, save_license_file};
+use file_io::{check_key_file_async, get_or_init_hwinfo_file, get_or_init_license_file, save_hw_info_file};
 use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyFile, Stats};
 use tokio::runtime::Runtime;
 
@@ -96,7 +96,6 @@ impl LicenseData {
 #[no_mangle]
 #[inline(always)]
 pub extern "C" fn update_machine_info(
-    company_name: *const c_char, 
     save_system_stats: bool, 
     os_name: *const c_char, 
     computer_name: *const c_char, 
@@ -134,7 +133,6 @@ pub extern "C" fn update_machine_info(
     has_avx512vpopcntdq: bool,
     has_neon: bool,
 ) {
-    let company_name_str = parse_c_char!(company_name);
     let os_name_str = parse_c_char!(os_name);
     let computer_name_str = parse_c_char!(computer_name);
     let users_language_str = parse_c_char!(users_language);
@@ -147,18 +145,15 @@ pub extern "C" fn update_machine_info(
     };
 
     rt.block_on(async {
-        let mut license_file = match get_or_init_license_file(company_name_str).await {
+        let mut hw_info_file = match get_or_init_hwinfo_file() {
             Ok(v) => v,
             Err(_) => return
         };
 
         if !save_system_stats {
-            license_file.machine_stats = None;
-            if license_file.machine_stats.is_some() {
-                license_file.machine_stats = None;
-                save_license_file(&license_file, company_name_str).unwrap_or_else(|_| ());
-                sleep(Duration::from_secs(15)).await;
-            }
+            hw_info_file.machine_stats = None;
+            let _result = save_hw_info_file(&hw_info_file).unwrap_or_else(|_| ());
+            sleep(Duration::from_secs(1)).await;
             return
         }
 
@@ -200,10 +195,10 @@ pub extern "C" fn update_machine_info(
             has_neon,
         });
 
-        if license_file.machine_stats.ne(&current_stats) {
-            license_file.machine_stats = current_stats;
-            save_license_file(&license_file, company_name_str).unwrap_or_else(|_| ());
-            sleep(Duration::from_secs(4)).await;
+        if hw_info_file.machine_stats.ne(&current_stats) {
+            hw_info_file.machine_stats = current_stats;
+            let _result = save_hw_info_file(&hw_info_file).unwrap_or_else(|_| ());
+            sleep(Duration::from_secs(1)).await;
         }
     });
 }

@@ -9,7 +9,7 @@ use prost::Message;
 use sha2::Digest;
 
 use crate::error::Error;
-use crate::generated::software_licensor_client::{ClientSideDataStorage, LicenseActivationResponse, LicenseKeyFile, Stats};
+use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseKeyFile};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::LicenseData;
 
@@ -62,7 +62,7 @@ fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
     Ok(Path::new(&dir_path).to_owned())
 }
 
-/// Gets the path to where the license file will be created.
+/// Gets the path to where the machine info will be created.
 /// 
 /// Only MacOS has a fallback to a user-specific path.
 fn get_machine_stats_path() -> Result<PathBuf, Error> {
@@ -121,7 +121,6 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
                 let mut data_storage = ClientSideDataStorage {
                     license_activation_response: None,
                     next_server_ecdh_key: None,
-                    machine_stats: None,
                     license_code: "".to_string(),
                     server_ecdsa_key: None,
                 };
@@ -138,7 +137,6 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
         let mut data_storage = ClientSideDataStorage {
             license_activation_response: None,
             next_server_ecdh_key: None,
-            machine_stats: None,
             license_code: "".to_string(),
             server_ecdsa_key: None,
         };
@@ -148,24 +146,29 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
     }
 }
 
-pub(crate) async fn get_or_init_hwinfo_file() -> Result<Stats, Error> {
+pub(crate) fn get_or_init_hwinfo_file() -> Result<ClientSideHwInfoStorage, Error> {
     let path = get_machine_stats_path()?;
 
     if path.exists() {
         let mut file = File::open(path)?;
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer);
-        match Stats::decode_length_delimited(buffer.as_slice()) {
+        file.read_to_end(&mut buffer)?;
+        match ClientSideHwInfoStorage::decode_length_delimited(buffer.as_slice()) {
             Ok(stats) => {
                 Ok(stats)
             },
             Err(_) => {
-                Err(Error::IoError)
-                
+                let hw_info_storage = ClientSideHwInfoStorage {
+                    machine_stats: None,
+                };
+                Ok(hw_info_storage)
             }
         }
     } else {
-        Err(Error::IoError)
+        let hw_info_storage = ClientSideHwInfoStorage {
+            machine_stats: None,
+        };
+        Ok(hw_info_storage)
     }
 }
 
@@ -184,8 +187,31 @@ pub(crate) fn save_license_file(data_storage: &ClientSideDataStorage, company_na
         let mut file = OpenOptions::new()
             .write(true)
             .append(false)
+            .truncate(true)
             .open(path)?;
         file.write_all(data_storage.encode_length_delimited_to_vec().as_slice())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Error> {
+    let path = get_machine_stats_path()?;
+
+    let contents = data.encode_length_delimited_to_vec();
+
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = File::create_new(path)?;
+        file.write_all(&contents)?;
+    } else {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(false)
+            .truncate(true)
+            .open(path)?;
+        file.write_all(&contents)?;
     }
     Ok(())
 }
@@ -474,12 +500,27 @@ mod tests {
         assert_eq!("newest_product_id", newest_key_file.product_id);
     }
 
-    #[tokio::test]
-    async fn local_file_check() {
-        let file = get_or_init_license_file("AlteredBrainChemistry").await.unwrap();
-        //assert!(file.license_activation_response.is_some(), "License activation response was none");
-        assert!(file.next_server_ecdh_key.is_some());
-        assert!(file.server_ecdsa_key.is_some());
+    #[test]
+    fn local_file_check() {
+        let file = get_or_init_hwinfo_file().unwrap();
         assert!(file.machine_stats.is_some(), "Machine stats were none");
+    }
+
+    #[test]
+    fn local_file_check_2() {
+        let path = get_machine_stats_path().unwrap();
+        assert!(path.exists());
+        let mut buffer = Vec::new();
+        let mut file = File::open(path).unwrap();
+        file.read_to_end(&mut buffer).unwrap();
+        let manual_file = if let Ok(data) = ClientSideHwInfoStorage::decode_length_delimited(buffer.as_slice()) {
+            assert!(data.machine_stats.is_some());
+            data.clone()
+        } else {
+            panic!("{:?}", &buffer)
+        };
+        let f_file = get_or_init_hwinfo_file().unwrap();
+        assert!(f_file.machine_stats.is_some());
+        assert_eq!(manual_file, f_file);
     }
 }

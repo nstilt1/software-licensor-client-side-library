@@ -41,30 +41,27 @@ void SoftwareLicensorStatus::update_machine_information(bool should_update) {
      * If it specifically says `audioProcessor.unlockStatus`, you may get this error. Instead 
      * use unlockForm(p.unlockStatus), or whatever variable name you have for the MyAudioProcessor&
      */
-    juce::String companyName = this->getCompanyName();
-    auto companyNamePtr = companyName.getCharPointer();
-    auto osName = juce::SystemStats::getOperatingSystemName().getCharPointer();
-    auto computerName = juce::SystemStats::getComputerName().getCharPointer();
-    auto userLanguage = juce::SystemStats::getUserLanguage().getCharPointer();
-    auto displayLanguage = juce::SystemStats::getDisplayLanguage().getCharPointer();
-    auto cpuVendor = juce::SystemStats::getCpuVendor().getCharPointer();
-    auto cpuModel = juce::SystemStats::getCpuModel().getCharPointer();
+    auto osName = juce::SystemStats::getOperatingSystemName().toStdString();
+    auto computerName = juce::SystemStats::getComputerName().toStdString();
+    auto userLanguage = juce::SystemStats::getUserLanguage().toStdString();
+    auto displayLanguage = juce::SystemStats::getDisplayLanguage().toStdString();
+    auto cpuVendor = juce::SystemStats::getCpuVendor().toStdString();
+    auto cpuModel = juce::SystemStats::getCpuModel().toStdString();
 
     update_machine_info(
-        companyNamePtr.getAddress(),
         should_update,
-        osName.getAddress(),
-        computerName.getAddress(),
+        osName.c_str(),
+        computerName.c_str(),
         juce::SystemStats::isOperatingSystem64Bit(),
-        userLanguage.getAddress(),
-        displayLanguage.getAddress(),
+        userLanguage.c_str(),
+        displayLanguage.c_str(),
         juce::SystemStats::getNumCpus(),
         juce::SystemStats::getNumPhysicalCpus(),
         juce::SystemStats::getCpuSpeedInMegahertz(),
         juce::SystemStats::getMemorySizeInMegabytes(),
         juce::SystemStats::getPageSize(),
-        cpuVendor.getAddress(),
-        cpuModel.getAddress(),
+        cpuVendor.c_str(),
+        cpuModel.c_str(),
         juce::SystemStats::hasMMX(),
         juce::SystemStats::has3DNow(),
         juce::SystemStats::hasFMA3(),
@@ -90,6 +87,4 @@ void SoftwareLicensorStatus::update_machine_information(bool should_update) {
         juce::SystemStats::hasNeon()
     );
 }
-
-
 #endif

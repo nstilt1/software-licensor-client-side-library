@@ -70,7 +70,6 @@ extern "C" {
      * determined using the JUCE library.
      */
     void update_machine_info(
-        const char* company_name,
         bool save_system_stats,
         const char* os_name,
         const char* computer_name,
@@ -147,14 +146,12 @@ public:
         for (const auto& juceStr : productIdsAndPubkeys) {
             product_cstrings.push_back(juceStr.getCharPointer().getAddress());
         }
-
-        auto companyName = this->getCompanyName();
         
         auto license_data = read_reply_from_webserver(
-            this->getCompanyName().getCharPointer().getAddress(),
-            this->getStoreId().getCharPointer().getAddress(),
-            machine_id.getCharPointer().getAddress(),
-            licenseCode.getCharPointer().getAddress(),
+            this->getCompanyName().toStdString().c_str(),
+            this->getStoreId().toStdString().c_str(),
+            machine_id.toStdString().c_str(),
+            licenseCode.toStdString().c_str(),
             product_cstrings.data(),
             product_cstrings.size()
         );
@@ -179,12 +176,10 @@ public:
             product_cstrings.push_back(juceStr.getCharPointer().getAddress());
         }
 
-        auto companyName = this->getCompanyName();
-
         auto license_data = check_license(
-            this->getCompanyName().getCharPointer().getAddress(),
-            this->getStoreId().getCharPointer().getAddress(),
-            machine_id.getCharPointer().getAddress(),
+            this->getCompanyName().toStdString().c_str(),
+            this->getStoreId().toStdString().c_str(),
+            machine_id.toStdString().c_str(),
             product_cstrings.data(),
             product_cstrings.size()
         );
@@ -208,9 +203,9 @@ public:
         }
 
         auto license_data = check_license_no_api_request(
-            this->getCompanyName().getCharPointer().getAddress(),
-            this->getStoreId().getCharPointer().getAddress(),
-            machine_id.getCharPointer().getAddress(),
+            this->getCompanyName().toStdString().c_str(),
+            this->getStoreId().toStdString().c_str(),
+            machine_id.toStdString().c_str(),
             product_cstrings.data(),
             product_cstrings.size()
         );
