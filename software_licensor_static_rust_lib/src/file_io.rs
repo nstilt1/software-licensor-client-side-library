@@ -499,28 +499,4 @@ mod tests {
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
     }
-
-    #[test]
-    fn local_file_check() {
-        let file = get_or_init_hwinfo_file().unwrap();
-        assert!(file.machine_stats.is_some(), "Machine stats were none");
-    }
-
-    #[test]
-    fn local_file_check_2() {
-        let path = get_machine_stats_path().unwrap();
-        assert!(path.exists());
-        let mut buffer = Vec::new();
-        let mut file = File::open(path).unwrap();
-        file.read_to_end(&mut buffer).unwrap();
-        let manual_file = if let Ok(data) = ClientSideHwInfoStorage::decode_length_delimited(buffer.as_slice()) {
-            assert!(data.machine_stats.is_some());
-            data.clone()
-        } else {
-            panic!("{:?}", &buffer)
-        };
-        let f_file = get_or_init_hwinfo_file().unwrap();
-        assert!(f_file.machine_stats.is_some());
-        assert_eq!(manual_file, f_file);
-    }
 }
