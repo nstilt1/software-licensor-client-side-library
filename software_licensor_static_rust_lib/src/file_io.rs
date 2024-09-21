@@ -489,6 +489,10 @@ mod tests {
             }
         );
 
+        license_response.key_file_signatures.insert(product_ids[0].to_string(), vec![5u8;96]);
+        license_response.key_file_signatures.insert(product_ids[1].to_string(), vec![5u8;96]);
+        license_response.key_file_signatures.insert(product_ids[2].to_string(), vec![5u8;96]);
+
         data_storage.license_activation_response = Some(license_response);
 
         let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).expect("Possibly lacking file read permissions").0;
