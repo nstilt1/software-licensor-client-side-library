@@ -11,7 +11,7 @@ use sha2::{Digest, Sha384};
 
 pub(crate) type EcdsaDigest = Sha384;
 
-use crate::{error::{Error, OptionErrors}, file_io::{get_or_init_hwinfo_file, save_license_file}, generated::software_licensor_client::{decrypt_info::ClientEcdhPubkey, ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response}, LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL};
+use crate::{error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hwinfo_file, save_license_file}, generated::software_licensor_client::{decrypt_info::ClientEcdhPubkey, ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response}, LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL};
 
 /// Gets the Software Licensor Public Keys.
 pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
@@ -75,7 +75,7 @@ pub(crate) async fn activate_license_request(
     let all_product_ids = product_id_hashmap.keys().cloned().collect::<Vec<String>>();
 
     if all_product_ids.is_empty() {
-        return Err(Error::LicensingError((2, "".into())))
+        return Err(LicensingError::NoLicenseFound( "".into()).into())
     }
 
     let inner_payload = LicenseActivationRequest {
@@ -176,7 +176,7 @@ pub(crate) async fn activate_license_request(
             Ok(v) => {
                 // there was a licensing error with the request. These come in the
                 // form of powers of 2 
-                return Err(Error::LicensingError((v, license_code.to_string())))
+                return Err(Error::LicensingError((v, license_code.to_string()).into()))
             },
             Err(_) => {
                 // there was a general error with the request

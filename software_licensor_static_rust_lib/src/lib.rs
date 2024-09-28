@@ -274,7 +274,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Ok(()) => (),
             Err(v) => {
                 match v {
-                    Error::LicensingError((e, _)) => return box_out!(LicenseData::licensing_error(e as i32, license_code_str)),
+                    Error::LicensingError(e) => return box_out!(LicenseData::licensing_error(e.get_error_code() as i32, license_code_str)),
                     _ => return box_out!(LicenseData::error(&v.to_string()))
                 }
             }
@@ -283,7 +283,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Ok(v) => return box_out!(v),
             Err(e) => {
                 match e {
-                    Error::LicensingError((c, _)) => return box_out!(LicenseData::licensing_error(c as i32, license_code_str)),
+                    Error::LicensingError(error) => return box_out!(LicenseData::licensing_error(error.get_error_code() as i32, license_code_str)),
                     _ => return box_out!(LicenseData::error(&e.to_string()))
                 }
             }
@@ -343,8 +343,8 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
             },
             Err(e) => {
                 match e {
-                    Error::LicensingError((v, license_code)) => {
-                        let r = LicenseData::licensing_error(v as i32, &license_code);
+                    Error::LicensingError(v) => {
+                        let r = LicenseData::licensing_error(v.get_error_code() as i32, &v.get_license_code());
                         box_out!(r)
                     },
                     _ => {
@@ -398,8 +398,8 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
             },
             Err(e) => {
                 match e {
-                    Error::LicensingError((v, license_code)) => {
-                        let r = LicenseData::licensing_error(v as i32, &license_code);
+                    Error::LicensingError(v) => {
+                        let r = LicenseData::licensing_error(v.get_error_code() as i32, &v.get_license_code());
                         return box_out!(r)
                     },
                     _ => {
