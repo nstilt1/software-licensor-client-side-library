@@ -1,8 +1,29 @@
 use std::time::SystemTimeError;
 
 #[derive(Debug)]
+pub enum LicensingError {
+    Success(String),
+    NoLicenseFound(String),
+    MachineLimitReached(String),
+    TrialEnded(String),
+    LicenseNoLongerActive(String),
+    IncorrectOfflineCode(String),
+    OfflineCodesNotAllowed(String),
+    InvalidLicenseCode(String),
+    MachineDeactivated(String),
+    InvalidLicenseType(String),
+    UnknownError((u32, String)),
+}
+
+impl From<LicensingError> for Error {
+    fn from(value: LicensingError) -> Self {
+        Error::LicensingError(value)
+    }
+}
+
+#[derive(Debug)]
 pub enum Error {
-    LicensingError((u32, String)), // a licensing error, along with the license code
+    LicensingError(LicensingError), // a licensing error, along with the license code
     ApiError(String), // an API error
     /// An IO error. This is usually caused when the program does not have sufficient 
     /// privileges to write to the output file
@@ -18,11 +39,65 @@ pub enum Error {
     SystemTimeError,
 }
 
+macro_rules! impl_error_codes {
+    ($(($variant:ident, $val:literal)), *) => {
+        impl From<(u32, String)> for LicensingError {
+            fn from((error_code, license_code): (u32, String)) -> LicensingError {
+                match error_code {
+                    $(
+                        $val => {LicensingError::$variant(license_code).into()}
+                    )*
+                    _ => LicensingError::UnknownError((error_code, license_code)).into()
+                }
+            }
+        }
+
+        impl LicensingError {
+            #[inline(always)]
+            pub fn get_error_code(&self) -> u32 {
+                match self {
+                    $(
+                        Self::$variant(_) => $val,
+                    )*
+                    Self::UnknownError((error_code, _license_code)) => {
+                        *error_code
+                    }
+                }
+            }
+
+            #[inline(always)]
+            pub fn get_license_code(&self) -> String {
+                match self {
+                    $(
+                        Self::$variant(license_code) => license_code.to_string(),
+                    )*
+                    Self::UnknownError((_error_code, license_code)) => {
+                        license_code.to_string()
+                    }
+                }
+            }
+        }
+    };
+}
+
+impl_error_codes!(
+    (Success, 1), 
+    (NoLicenseFound, 2),
+    (MachineLimitReached, 4),
+    (TrialEnded, 8),
+    (LicenseNoLongerActive, 16),
+    (IncorrectOfflineCode, 32),
+    (OfflineCodesNotAllowed, 64),
+    (InvalidLicenseCode, 128),
+    (MachineDeactivated, 256),
+    (InvalidLicenseType, 512)
+);
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ApiError(s) => f.write_str(s),
-            Self::LicensingError((v, _license_code)) => f.write_str(&v.to_string()),
+            Self::LicensingError(v) => f.write_str(&v.get_error_code().to_string()),
             Self::CryptoError(s) => f.write_str(s),
             Self::OptionError(s) => f.write_str(s),
             Self::IoError => f.write_str("There was an IO error"),
