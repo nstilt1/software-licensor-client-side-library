@@ -318,17 +318,9 @@ pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product
 
 /// Handles licensing errors by removing key files before returning the error
 #[inline(always)]
-pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: Error) -> Result<LicenseData, Error> {
-    match licensing_error {
-        Error::LicensingError(l) => {
-            remove_key_files(license_file, product_ids, company_name_str);
-            Ok(LicenseData::licensing_error(l.get_error_code() as i32, &l.get_license_code()))
-        },
-        _ => {
-            remove_key_files(license_file, product_ids, company_name_str);
-            Err(licensing_error)
-        }
-    }
+pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: LicensingError) -> Error {
+    remove_key_files(license_file, product_ids, company_name_str);
+    licensing_error.into()
 }
 
 #[inline(always)]
@@ -360,7 +352,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
         }
         (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
             Ok(v) => v,
-            Err(licensing_error) => return handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error.into())
+            Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error))
         };
         if key_file.message_code != 1 {
             return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32))
@@ -374,7 +366,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
         if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
             (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
                 Ok(v) => v,
-                Err(licensing_error) => return handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error.into())
+                Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error))
             }
         }
     }
