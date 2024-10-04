@@ -16,8 +16,6 @@ use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::LicenseData;
 
 /// Gets the path to where the license file will be created.
-/// 
-/// Only MacOS has a fallback to a user-specific path.
 fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
     #[cfg(target_os = "windows")]
     let dir_path = format!("C:\\ProgramData\\{}\\license.bin", company_name_str);
@@ -43,8 +41,6 @@ fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
 }
 
 /// Gets the path to where the machine info will be created.
-/// 
-/// Only MacOS has a fallback to a user-specific path.
 fn get_machine_stats_path() -> Result<PathBuf, Error> {
     #[cfg(target_os = "windows")]
     let dir_path = format!("C:\\ProgramData\\HyperformanceSolutions\\hwinfo.bin");
