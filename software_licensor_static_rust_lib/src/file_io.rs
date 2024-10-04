@@ -4,6 +4,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Write, Read};
 use std::time::{SystemTime, UNIX_EPOCH};
 use base64::prelude::{Engine as _, BASE64_STANDARD};
+#[cfg(target_os = "macos")]
+use directories::ProjectDirs;
 use p384::ecdsa::{Signature, VerifyingKey, signature::DigestVerifier};
 use prost::Message;
 use sha2::Digest;
@@ -13,17 +15,6 @@ use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSi
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::LicenseData;
 
-#[cfg(target_os = "macos")]
-use std::os::unix::fs::PermissionsExt;
-
-#[cfg(target_os = "macos")]
-fn has_permissions(path: &PathBuf) -> bool {
-    fs::metadata(path)
-        .map(|metadata| metadata.permissions())
-        .map(|permissions| permissions.mode() & 0o222 != 0)
-        .unwrap_or(false)
-}
-
 /// Gets the path to where the license file will be created.
 /// 
 /// Only MacOS has a fallback to a user-specific path.
@@ -32,21 +23,10 @@ fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
     let dir_path = format!("C:\\ProgramData\\{}\\license.bin", company_name_str);
     #[cfg(target_os = "macos")]
     let dir_path = {
-        // defaults to a system-wide path, but if the program lacks permissions, we'll write to a user-specific path
-        let dir_path: String = format!("/Library/Application Support/{}/license.bin", company_name_str);
-        let p = Path::new(&dir_path).to_owned();
-        if has_permissions(&p) {
-            dir_path
+        if let Some(proj_dirs) = ProjectDirs::from("com", company_name_str, "Software Licensor") {
+            proj_dirs.data_dir().join("license.bin")
         } else {
-            // home_dir() should work on MacOS
-            std::env::home_dir()
-                .unwrap_or("IOError/".into())
-                .join("Library/Application Support/")
-                .join(company_name_str)
-                .join("license.bin")
-                .to_str()
-                .expect("Should be valid")
-                .to_string()
+            "".into()
         }
     };
     #[cfg(target_os = "linux")]
@@ -70,21 +50,10 @@ fn get_machine_stats_path() -> Result<PathBuf, Error> {
     let dir_path = format!("C:\\ProgramData\\HyperformanceSolutions\\hwinfo.bin");
     #[cfg(target_os = "macos")]
     let dir_path = {
-        // defaults to a system-wide path, but if the program lacks permissions, we'll write to a user-specific path
-        let dir_path: String = format!("/Library/Application Support/HyperformanceSolutions/hwinfo.bin");
-        let p = Path::new(&dir_path).to_owned();
-        if has_permissions(&p) {
-            dir_path
+        if let Some(proj_dirs) = ProjectDirs::from("com", "Hyperformance Solutions", "Software Licensor") {
+            proj_dirs.data_dir().join("hwinfo.bin")
         } else {
-            // home_dir() should work on MacOS
-            std::env::home_dir()
-                .unwrap_or("IOError/".into())
-                .join("Library/Application Support/")
-                .join("HyperformanceSolutions")
-                .join("hwinfo.bin")
-                .to_str()
-                .expect("Should be valid")
-                .to_string()
+            "".into()
         }
     };
     #[cfg(target_os = "linux")]
