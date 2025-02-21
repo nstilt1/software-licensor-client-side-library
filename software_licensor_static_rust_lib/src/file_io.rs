@@ -383,7 +383,7 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     let verifying_key = match VerifyingKey::from_sec1_bytes(&decoded_pubkey) {
         Ok(v) => v,
         Err(_) => {
-            remove_key_files(&mut license_file, &product_ids, company_name_str);
+            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
             return Err(LicensingError::NoLicenseFound(license_code).into())
         }
     };
