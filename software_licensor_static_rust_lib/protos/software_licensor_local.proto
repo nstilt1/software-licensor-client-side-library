@@ -120,6 +120,7 @@ message Stats {
     uint32 num_logical_cores = 6;
     uint32 num_physical_cores = 7;
     uint32 cpu_freq_mhz = 8;
+    string cpu_archictecture = 40;
     uint32 ram_mb = 34;
     uint32 page_size = 35;
     string cpu_vendor = 9;
@@ -217,21 +218,34 @@ message CompactServerEcdsaKey {
 //
 // Security notice: The user will be able to edit this locally stored file. In 
 // order to crack this part of the DRM, they could edit the key files and the 
-// signatures stored in the `LicenseActivationResponse`. While it is possible, 
-// it is generally infeasible to brute force NIST P-384 signatures via this 
-// method. Your code is more likely to be cracked by reverse engineering / 
-// decompiling the software than it would be cracked with the P-384 signature.
+// signatures stored in the `LicenseActivationResponse`. While it is "possible" 
+// it is generally infeasible to brute force NIST P-384 signatures. Your code is 
+// more likely to be cracked by reverse engineering / decompiling the software 
+// than it would be cracked cryptographically. If someone could crack NIST-P384 
+// signatures, I don't think they would be targeting JUCE software unless they 
+// just really wanted some target practice. 
 //
 // And another note about cracking, if there is enough demand for your software, 
 // it will be cracked. No amount of DRM will stop a determined person.
 message ClientSideDataStorage {
-    LicenseActivationResponse license_activation_response = 1;
+    // hashmap of Store IDs to license activation responses. This prevents 
+    // problems arising from two stores coincidentally share the same 
+    // `companyName` value.
+    //
+    // the store IDs will be truncated, with only the first 20 characters being 
+    // used. Even if someone found out the whole API key, they cannot use it 
+    // to link a new store or change any settings
+    map<string, LicenseData> license_data = 1;
     CompactServerEcdhKey next_server_ecdh_key = 2;
-    string license_code = 4;
     CompactServerEcdsaKey server_ecdsa_key = 5;
 }
 
 message ClientSideHwInfoStorage {
     // optional machine stats; will be None if the user doesn't consent
     Stats machine_stats = 1;
+}
+
+message LicenseData {
+    LicenseActivationResponse license_activation_response = 1;
+    string license_code = 5;
 }

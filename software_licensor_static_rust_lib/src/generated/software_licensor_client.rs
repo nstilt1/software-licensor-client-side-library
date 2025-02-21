@@ -164,6 +164,8 @@ pub struct Stats {
     pub num_physical_cores: u32,
     #[prost(uint32, tag = "8")]
     pub cpu_freq_mhz: u32,
+    #[prost(string, tag = "40")]
+    pub cpu_archictecture: ::prost::alloc::string::String,
     #[prost(uint32, tag = "34")]
     pub ram_mb: u32,
     #[prost(uint32, tag = "35")]
@@ -322,22 +324,32 @@ pub struct CompactServerEcdsaKey {
 ///
 /// Security notice: The user will be able to edit this locally stored file. In
 /// order to crack this part of the DRM, they could edit the key files and the
-/// signatures stored in the `LicenseActivationResponse`. While it is possible,
-/// it is generally infeasible to brute force NIST P-384 signatures via this
-/// method. Your code is more likely to be cracked by reverse engineering /
-/// decompiling the software than it would be cracked with the P-384 signature.
+/// signatures stored in the `LicenseActivationResponse`. While it is "possible"
+/// it is generally infeasible to brute force NIST P-384 signatures. Your code is
+/// more likely to be cracked by reverse engineering / decompiling the software
+/// than it would be cracked cryptographically. If someone could crack NIST-P384
+/// signatures, I don't think they would be targeting JUCE software unless they
+/// just really wanted some target practice.
 ///
 /// And another note about cracking, if there is enough demand for your software,
 /// it will be cracked. No amount of DRM will stop a determined person.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClientSideDataStorage {
-    #[prost(message, optional, tag = "1")]
-    pub license_activation_response: ::core::option::Option<LicenseActivationResponse>,
+    /// hashmap of Store IDs to license activation responses. This prevents
+    /// problems arising from two stores coincidentally share the same
+    /// `companyName` value.
+    ///
+    /// the store IDs will be truncated, with only the first 20 characters being
+    /// used. Even if someone found out the whole API key, they cannot use it
+    /// to link a new store or change any settings
+    #[prost(map = "string, message", tag = "1")]
+    pub license_data: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        LicenseData,
+    >,
     #[prost(message, optional, tag = "2")]
     pub next_server_ecdh_key: ::core::option::Option<CompactServerEcdhKey>,
-    #[prost(string, tag = "4")]
-    pub license_code: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "5")]
     pub server_ecdsa_key: ::core::option::Option<CompactServerEcdsaKey>,
 }
@@ -347,4 +359,12 @@ pub struct ClientSideHwInfoStorage {
     /// optional machine stats; will be None if the user doesn't consent
     #[prost(message, optional, tag = "1")]
     pub machine_stats: ::core::option::Option<Stats>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LicenseData {
+    #[prost(message, optional, tag = "1")]
+    pub license_activation_response: ::core::option::Option<LicenseActivationResponse>,
+    #[prost(string, tag = "5")]
+    pub license_code: ::prost::alloc::string::String,
 }
