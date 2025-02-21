@@ -167,6 +167,7 @@ pub extern "C" fn update_machine_info(
             num_logical_cores: num_logical_cores as u32,
             num_physical_cores: num_physical_cores as u32,
             cpu_freq_mhz: cpu_freq_mhz as u32,
+            cpu_archictecture: std::env::consts::ARCH.to_string(),
             ram_mb: ram_mb as u32,
             page_size: page_size as u32,
             cpu_vendor: cpu_vendor_str.to_string(),
@@ -266,7 +267,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     let rt = runtime!(true);
 
     rt.block_on(async {
-        let mut license_file = match get_or_init_license_file(company_name_str).await {
+        let mut license_file = match get_or_init_license_file(company_name_str, store_id_str.to_string()).await {
             Ok(v) => v,
             Err(e) => return box_out!(LicenseData::error(&e.to_string()))
         };
@@ -280,7 +281,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
                 }
             }
         };
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false).await {
+        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
             Ok(v) => return box_out!(v),
             Err(e) => {
                 match e {
@@ -338,7 +339,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true).await {
+        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true, store_id_str.to_string()).await {
             Ok(v) => {
                 box_out!(v)
             },
@@ -393,7 +394,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false).await {
+        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
             Ok(v) => {
                 return box_out!(v)
             },

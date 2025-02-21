@@ -53,7 +53,9 @@ pub(crate) async fn activate_license_request(
     license_code: &str, 
     license_file: &mut ClientSideDataStorage,
 ) -> Result<(), Error> {
-    license_file.license_code = license_code.to_string();
+    let mut truncated_store_id = store_id.to_string();
+    truncated_store_id.truncate(20);
+    
     let hw_info = get_or_init_hwinfo_file()?;
 
     let mut product_id_hashmap: HashMap<String, ()> = HashMap::with_capacity(product_ids.len());
@@ -61,17 +63,18 @@ pub(crate) async fn activate_license_request(
         product_id_hashmap.insert(product_id.to_string(), ());
     });
 
-    match &license_file.license_activation_response {
-        Some(v) => {
-            v.key_files.keys().for_each(|product_id| {
+    if let Some(license_data) = license_file.license_data.get_mut(&truncated_store_id) {
+        license_data.license_code = license_code.to_string();
+        if let Some(response) = &license_data.license_activation_response {
+            response.key_files.keys().for_each(|product_id| {
                 product_id_hashmap.insert(product_id.to_string(), ());
             });
-            v.licensing_errors.keys().for_each(|product_id| {
+            response.licensing_errors.keys().for_each(|product_id| {
                 product_id_hashmap.insert(product_id.to_string(), ());
             });
-        },
-        None => ()
+        }
     }
+
     let all_product_ids = product_id_hashmap.keys().cloned().collect::<Vec<String>>();
 
     if all_product_ids.is_empty() {
@@ -238,7 +241,9 @@ pub(crate) async fn activate_license_request(
     };
 
     // save the license response
-    license_file.license_activation_response = Some(license_response);
+    if let Some(license_data) = license_file.license_data.get_mut(&truncated_store_id) {
+        license_data.license_activation_response = Some(license_response);
+    }
     save_license_file(license_file, company_name_str)?;
 
     Ok(())

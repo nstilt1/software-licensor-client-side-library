@@ -12,6 +12,7 @@ use crate::error::{Error, LicensingError};
 use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseKeyFile};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::LicenseData;
+use crate::generated::software_licensor_client::LicenseData as LicenseDataProto;
 
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
@@ -100,8 +101,9 @@ fn get_machine_stats_path() -> Result<PathBuf, Error> {
     Ok(Path::new(&dir_path).to_owned())
 }
 
-pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<ClientSideDataStorage, Error> {
+pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key: String) -> Result<ClientSideDataStorage, Error> {
     let path = get_license_file_path(company_name_str)?;
+    api_key.truncate(20);
     
     if path.exists() {
         let mut file = File::open(path)?;
@@ -113,15 +115,25 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
                 if data_storage.next_server_ecdh_key.is_none() {
                     get_pubkeys(&mut data_storage, true).await?;
                 }
+                if !data_storage.license_data.contains_key(&api_key) {
+                    data_storage.license_data.insert(api_key.to_string(), LicenseDataProto {
+                        license_activation_response: None,
+                        license_code: "".to_string(),
+                    });
+                }
                 save_license_file(&data_storage, company_name_str)?;
                 Ok(data_storage)
             },
             Err(_) => {
                 // need to initialize the file
-                let mut data_storage = ClientSideDataStorage {
+                let mut license_data = HashMap::new();
+                license_data.insert(api_key, LicenseDataProto {
                     license_activation_response: None,
-                    next_server_ecdh_key: None,
                     license_code: "".to_string(),
+                });
+                let mut data_storage = ClientSideDataStorage {
+                    license_data,
+                    next_server_ecdh_key: None,
                     server_ecdsa_key: None,
                 };
                 get_pubkeys(&mut data_storage, true).await?;
@@ -135,9 +147,8 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str) -> Result<C
             fs::create_dir_all(parent)?;
         }
         let mut data_storage = ClientSideDataStorage {
-            license_activation_response: None,
+            license_data: HashMap::new(),
             next_server_ecdh_key: None,
-            license_code: "".to_string(),
             server_ecdsa_key: None,
         };
         get_pubkeys(&mut data_storage, true).await?;
@@ -225,8 +236,14 @@ pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Er
 /// 
 /// This function can only result in an `Error::LicensingError`, so the error number can be returned to the external code.
 #[inline(always)]
-pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_ids: &Vec<&String>) -> Result<(LicenseKeyFile, Signature, LicenseActivationResponse), LicensingError> {
-    let license_activation_response = match &data_storage.license_activation_response {
+pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_ids: &Vec<&String>, mut api_key: String) -> Result<(LicenseKeyFile, Signature, LicenseActivationResponse), LicensingError> {
+    api_key.truncate(20);
+    let license_data = match data_storage.license_data.get(&api_key) {
+        Some(v) => v,
+        None => return Err(LicensingError::NoLicenseFound("".into()))
+    };
+    
+    let license_activation_response = match &license_data.license_activation_response {
         Some(v) => v,
         None => return Err(LicensingError::NoLicenseFound("".into()))
     };
@@ -262,19 +279,19 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
             }
         });
         if error_codes.is_empty() {
-            return Err(LicensingError::NoLicenseFound(data_storage.license_code.clone()))
+            return Err(LicensingError::NoLicenseFound(license_data.license_code.clone()))
         }
         // prioritizing specific licensing errors over others
         if error_codes.contains(&4) { // machine limit reached
-            return Err(LicensingError::MachineLimitReached(data_storage.license_code.clone()))
+            return Err(LicensingError::MachineLimitReached(license_data.license_code.clone()))
         }
         if error_codes.contains(&16) { // license no longer active
-            return Err(LicensingError::LicenseNoLongerActive(data_storage.license_code.clone()))
+            return Err(LicensingError::LicenseNoLongerActive(license_data.license_code.clone()))
         }
         if error_codes.contains(&8) { // trial ended
-            return Err(LicensingError::TrialEnded(data_storage.license_code.clone()))
+            return Err(LicensingError::TrialEnded(license_data.license_code.clone()))
         }
-        return Err(LicensingError::from((error_codes[0], data_storage.license_code.clone())))
+        return Err(LicensingError::from((error_codes[0], license_data.license_code.clone())))
     }
     found_key_files.sort_unstable_by(|a, b| {
         let a_success = a.message_code == 1;
@@ -302,8 +319,13 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
 /// Removes key files so that we don't keep automatically checking up
 /// on them.
 #[inline(always)]
-pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str) {
-    let mut license_response = match &license_file.license_activation_response {
+pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, mut api_key: String) {
+    api_key.truncate(20);
+    let license_data = match license_file.license_data.get_mut(&api_key) {
+        Some(v) => v,
+        None => return
+    };
+    let mut license_response = match &license_data.license_activation_response {
         Some(v) => v.clone(),
         None => return
     };
@@ -312,26 +334,33 @@ pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product
         license_response.key_file_signatures.remove(*product_id);
         license_response.licensing_errors.remove(*product_id);
     }
-    license_file.license_activation_response = Some(license_response);
+    license_data.license_activation_response = Some(license_response);
     save_license_file(license_file, company_name_str).unwrap_or_else(|_| ());
 }
 
 /// Handles licensing errors by removing key files before returning the error
 #[inline(always)]
-pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: LicensingError) -> Error {
-    remove_key_files(license_file, product_ids, company_name_str);
+
+pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: LicensingError, api_key: String) -> Error {
+    remove_key_files(license_file, product_ids, company_name_str, api_key);
     licensing_error.into()
 }
 
 #[inline(always)]
-pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str, product_ids_and_pubkeys: &HashMap<String, String>, machine_id: &str, should_send_request: bool) -> Result<LicenseData, Error> {
-    let mut license_file = get_or_init_license_file(company_name_str).await?;
-    let license_code = match license_file.license_code.len() < 16 {
-        true => return Err(LicensingError::NoLicenseFound(license_file.license_code).into()),
-        false => license_file.license_code.clone()
+pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str, product_ids_and_pubkeys: &HashMap<String, String>, machine_id: &str, should_send_request: bool, api_key: String) -> Result<LicenseData, Error> {
+    let mut license_file = get_or_init_license_file(company_name_str, api_key.clone()).await?;
+    let mut trimmed_api_key = api_key.clone();
+    trimmed_api_key.truncate(20);
+    let license_data = match license_file.license_data.get_mut(&trimmed_api_key) {
+        Some(v) => v,
+        None => return Err(Error::LicensingError((2, "".to_string()).into()))
+    };
+    let license_code = match license_data.license_code.len() < 16 {
+        true => return Err(Error::LicensingError((2, license_data.license_code.clone()).into())),
+        false => license_data.license_code.clone()
     };
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
-    let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
+    let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
         Ok(v) => v,
         Err(licensing_error) => return Err(licensing_error.into())
     };
@@ -350,9 +379,9 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
                 return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
             }
         }
-        (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
+        (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
             Ok(v) => v,
-            Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error))
+            Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
         };
         if key_file.message_code != 1 {
             return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32))
@@ -364,16 +393,16 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     if key_file.check_back_timestamp < now && should_send_request {
         // send request
         if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
-            (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids) {
+            (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
                 Ok(v) => v,
-                Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error))
+                Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
             }
         }
     }
 
     if machine_id.ne(&key_file.machine_id) {
-        remove_key_files(&mut license_file, &product_ids, company_name_str);
-        return Err(LicensingError::NoLicenseFound(license_code).into())
+        remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
+        return Err(Error::LicensingError((2, license_code).into()))
     }
     
     // verify signature on the key file
@@ -390,15 +419,15 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
     let verifying_key = match VerifyingKey::from_sec1_bytes(&decoded_pubkey) {
         Ok(v) => v,
         Err(_) => {
-            remove_key_files(&mut license_file, &product_ids, company_name_str);
-            return Err(LicensingError::NoLicenseFound(license_code).into())
+            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
+            return Err(Error::LicensingError((2, license_code).into()))
         }
     };
     match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(bytes), &signature) {
         Ok(_) => Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32)),
         Err(_) => {
-            remove_key_files(&mut license_file, &product_ids, company_name_str);
-            Err(LicensingError::NoLicenseFound(license_code).into())
+            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
+            Err(Error::LicensingError((2, license_code).into()))
         }
     }
 }
@@ -413,7 +442,9 @@ mod tests {
 
     #[tokio::test]
     async fn key_file_ordering() {
-        let mut data_storage = get_or_init_license_file("software_licensor_test_company").await.expect("This should succeed unless the file is lacking permissions");
+        let mut data_storage = get_or_init_license_file("software_licensor_test_company", "ABCDEFGHIJKL".to_string()).await.expect("This should succeed unless the file is lacking permissions");
+
+        let license_data = data_storage.license_data.get_mut("ABCDEFGHIJKL").unwrap();
 
         let mut license_response = LicenseActivationResponse { 
             key_files: HashMap::new(), 
@@ -485,13 +516,13 @@ mod tests {
         license_response.key_file_signatures.insert(product_ids[1].to_string(), vec![5u8;96]);
         license_response.key_file_signatures.insert(product_ids[2].to_string(), vec![5u8;96]);
 
-        data_storage.license_activation_response = Some(license_response);
+        license_data.license_activation_response = Some(license_response);
 
-        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).expect("Possibly lacking file read permissions").0;
+        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone(), "ABCDEFGHIJKL".to_string()).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
 
-        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone()).expect("Possibly lacking file read permissions").0;
+        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone(), "ABCDEFGHIJKL".to_string()).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
     }
