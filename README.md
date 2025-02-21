@@ -124,6 +124,20 @@ For XCode on MacOS... first, if you happen to be using JUCE 7.0.7, you'll need t
 
 If there are any issues with the build, consider adding the path to `software_licensor_static_rust_lib/target/universal` into `Projucer>Exporters>XCode>Debug/Release>Extra Library Search Paths`.
 
+#### Signing on MacOS
+
+First, you need to take note of the `entitltements.plist` file in this repo. This file is required for code signing as it allows the application to make API requests with the serverless Software Licensor API. It also allows creation and modification of the license key file in `~/Library/[Vendor]/license.bin` and the hardware info file in `~/Library/com.Hyperformance-Solutions.Software-Licensor/hwinfo.bin`. The `hwinfo.bin` file is conditionally populated with the user's hardware information so that it can be sent to the Software Licensor API. The entitlements also include a "user-selected" file access in the event that the plugin's presets need any permissions to be saved/loaded and if the plugin is lacking permissions.
+
+If you get `Command PhaseScriptExecution failed with a nonzero exit code` when trying to build a signed AU and VST3... this could be for many different reasons, but I deleted the MacOS builds folder, and re-exported the project from Projucer, and I then **left the Code Signing settings under `Build Settings` alone**. I was trying to select the code signing certificate in those `Build Settings` under `Signing`, but it stopped working and cost me several hours to figure out why the builds weren't working. If you're having this issue, consider manually signing the using the command line. Here is a sample command:
+
+```sh
+codesign --sign "Developer ID Application: [name] [ID] *OR* SHA-1 hash" \ 
+"/path/to/My Plugin.component" \
+"/path/to/My Plugin.vst3" \
+--timestamp --force --options runtime --verbose --deep \
+--entitlements "/path/to/software-licensor-client-side-library/entitlements.plist"
+```
+
 # Potential Issues with the JUCE code
 
 There are a few potential issues to look out for when compiling and running the JUCE code.

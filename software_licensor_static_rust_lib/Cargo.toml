@@ -25,3 +25,6 @@ rand = "0.8.5"
 reqwest = { version = "0.12.5", features = ["rustls-tls"], default-features = false}
 sha2 = "0.10.8"
 tokio = { version = "1.38.1", features = ["rt", "rt-multi-thread", "macros"]}
+
+[target.'cfg(target_os = "macos")'.dependencies]
+directories = "5.0"
