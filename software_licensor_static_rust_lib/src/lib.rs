@@ -413,3 +413,34 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Read;
+    use crate::generated::software_licensor_client::ClientSideDataStorage;
+    use prost::Message;
+
+    #[test]
+    fn failing_test() {
+        let path = "src/tmp/license.bin";
+        let mut file = File::open(path).unwrap();
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer);
+        match ClientSideDataStorage::decode_length_delimited(buffer.as_slice()) {
+            Ok(mut data_storage) => {
+                let april_7_2026 = 1775576703;
+                assert_eq!(data_storage.server_ecdsa_key.unwrap().expiration, april_7_2026);
+                let license_data = data_storage.license_data;
+                //let first_key = license_data.keys().next().unwrap();
+                //assert_eq!(first_key, "MOFO");
+                assert_eq!(license_data, HashMap::new());
+                //assert_eq!(data_storage.license_data.get(data_storage.license_data.keys().first().unwrap()).license_activation_response.licensing_errors, Default::default())
+            },
+            Err(_) => {
+                panic!("Couldn't read license file");
+            }
+        }
+    }
+}

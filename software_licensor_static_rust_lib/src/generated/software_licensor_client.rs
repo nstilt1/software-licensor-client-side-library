@@ -13,6 +13,8 @@ pub struct ExpiringEcdhKey {
     pub ecdh_public_key: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "3")]
     pub ecdh_public_key_pem: ::prost::alloc::string::String,
+    #[prost(uint64, optional, tag = "8")]
+    pub expiration: ::core::option::Option<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -102,6 +104,8 @@ pub struct EcdhKey {
     pub ecdh_public_key: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "3")]
     pub ecdh_public_key_pem: ::prost::alloc::string::String,
+    #[prost(uint64, optional, tag = "8")]
+    pub expiration: ::core::option::Option<u64>,
 }
 /// An API response from the service.
 ///
@@ -307,6 +311,8 @@ pub struct CompactServerEcdhKey {
     pub ecdh_key_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub ecdh_public_key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, optional, tag = "8")]
+    pub expiration: ::core::option::Option<u64>,
 }
 /// A compact version of `ExpiringEcdsaKey` that has the PEM field redacted to
 /// save space.

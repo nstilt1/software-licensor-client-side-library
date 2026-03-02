@@ -30,6 +30,7 @@ pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ec
         data_storage.next_server_ecdh_key = Some(CompactServerEcdhKey {
             ecdh_key_id: ecdh_key.ecdh_key_id.clone(),
             ecdh_public_key: ecdh_key.ecdh_public_key.clone(),
+            expiration: ecdh_key.expiration,
         });
     }
 
@@ -102,13 +103,19 @@ pub(crate) async fn activate_license_request(
     let symmetric_algorithm = "aes-256-gcm";
 
     let ephemeral_key = EphemeralSecret::random(&mut OsRng);
-    let next_ecdh_key = match license_file.next_server_ecdh_key.unwrap_or_err("The next ECDH key was missing in the license file") {
+    let mut next_ecdh_key = match license_file.next_server_ecdh_key.unwrap_or_err("The next ECDH key was missing in the license file") {
         Ok(v) => v,
         Err(_) => {
             get_pubkeys(license_file, true).await?;
             license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?
         }
     };
+    if let Some(e) = next_ecdh_key.expiration {
+        if e < SystemTime::now().duration_since(UNIX_EPOCH).expect("should be fine").as_secs() {
+            get_pubkeys(license_file, true);
+            next_ecdh_key = license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?;
+        }
+    }
     let server_ecdh_pubkey = PublicKey::from_sec1_bytes(&next_ecdh_key.ecdh_public_key)?;
 
     let shared_secret = ephemeral_key.diffie_hellman(&server_ecdh_pubkey);
@@ -217,6 +224,7 @@ pub(crate) async fn activate_license_request(
     license_file.next_server_ecdh_key = Some(CompactServerEcdhKey {
         ecdh_key_id: next_ecdh_key.ecdh_key_id.clone(),
         ecdh_public_key: next_ecdh_key.ecdh_public_key.clone(),
+        expiration: next_ecdh_key.expiration
     });
 
     let ciphertext = response_wrapper.data;
