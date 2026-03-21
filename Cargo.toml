@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "software_licensor_static_rust_lib"
+]
+resolver = "3"
