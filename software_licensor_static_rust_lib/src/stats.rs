@@ -12,7 +12,6 @@ pub struct Stats {
     pub users_language: String,
     pub display_language: String,
     pub computer_name: String,
-    pub device_id: String,
 }
 
 impl Stats {
@@ -89,16 +88,10 @@ mod platform {
         SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX,
     };
 
-    pub fn collect() -> Stats {
+    pub fn get_device_id() -> String {
         let cpu_vendor = cpu_vendor().unwrap_or_default();
         let cpu_model = cpu_model().unwrap_or_default();
-        let ram_mb = ram_mb().unwrap_or(0);
-        let num_physical_cores = num_physical_cores().unwrap_or(0);
-        let cpu_freq_mhz = cpu_freq_mhz().unwrap_or(0);
-        let users_language = user_locale_name().unwrap_or_default();
-        let display_language = display_language_name().unwrap_or_default();
-        let computer_name = computer_name().unwrap_or_default();
-
+        
         let smbios_uuid = smbios_system_uuid().unwrap_or_default();
         let smbios_serial = smbios_system_serial().unwrap_or_default();
         let board_serial = smbios_baseboard_serial().unwrap_or_default();
@@ -132,19 +125,6 @@ mod platform {
         let display_language = display_language_name().unwrap_or_default();
         let computer_name = computer_name().unwrap_or_default();
 
-        let smbios_uuid = smbios_system_uuid().unwrap_or_default();
-        let smbios_serial = smbios_system_serial().unwrap_or_default();
-        let board_serial = smbios_baseboard_serial().unwrap_or_default();
-
-        let device_id = super::sha256_hex(&[
-            "windows",
-            &cpu_vendor,
-            &cpu_model,
-            &smbios_uuid,
-            &smbios_serial,
-            &board_serial,
-        ]);
-
         Stats {
             cpu_vendor,
             cpu_model,
@@ -154,7 +134,6 @@ mod platform {
             users_language,
             display_language,
             computer_name,
-            device_id,
         }
     }
 
@@ -569,19 +548,6 @@ mod platform {
         let display_language = users_language.clone();
         let computer_name = computer_name().unwrap_or_default();
 
-        let product_uuid = read_trimmed("/sys/class/dmi/id/product_uuid").unwrap_or_default();
-        let board_serial = read_trimmed("/sys/class/dmi/id/board_serial").unwrap_or_default();
-        let board_name = read_trimmed("/sys/class/dmi/id/board_name").unwrap_or_default();
-
-        let device_id = super::sha256_hex(&[
-            "linux",
-            &cpu_vendor,
-            &cpu_model,
-            &product_uuid,
-            &board_serial,
-            &board_name,
-        ]);
-
         Stats {
             cpu_vendor,
             cpu_model,
@@ -591,7 +557,6 @@ mod platform {
             users_language,
             display_language,
             computer_name,
-            device_id,
         }
     }
 
@@ -744,13 +709,11 @@ mod platform {
         Language { display_language, users_language }
     }
 
-    pub fn get_device_id() -> Stats {
+    pub fn get_device_id() -> String {
         let cpu_vendor = sysctl_string("machdep.cpu.vendor").unwrap_or_default();
         let cpu_model = sysctl_string("machdep.cpu.brand_string")
             .or_else(|| sysctl_string("hw.model"))
             .unwrap_or_default();
-
-        let computer_name = computer_name().unwrap_or_default();
 
         let hw_model = sysctl_string("hw.model").unwrap_or_default();
         let board_id = sysctl_string("hw.target").unwrap_or_default();
@@ -783,17 +746,6 @@ mod platform {
         let display_language = users_language.clone();
         let computer_name = computer_name().unwrap_or_default();
 
-        let hw_model = sysctl_string("hw.model").unwrap_or_default();
-        let board_id = sysctl_string("hw.target").unwrap_or_default();
-
-        let device_id = super::sha256_hex(&[
-            "macos",
-            &cpu_vendor,
-            &cpu_model,
-            &hw_model,
-            &board_id,
-        ]);
-
         Stats {
             cpu_vendor,
             cpu_model,
@@ -803,7 +755,6 @@ mod platform {
             users_language,
             display_language,
             computer_name,
-            device_id,
         }
     }
 

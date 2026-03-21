@@ -1,5 +1,6 @@
 /// Intializes a tokio::runtime::Runtime
 #[macro_export]
+#[cfg(not(feature = "rlib"))]
 macro_rules! runtime {
     (true) => {
         match Runtime::new() {
@@ -37,6 +38,7 @@ macro_rules! call_callback_struct {
 /// 
 /// Parses a c_char and calls the callback with a nullptr with the given error message if there is an error.
 #[macro_export]
+#[cfg(not(feature = "rlib"))]
 macro_rules! parse_c_char {
     ($c_char_arg:expr, $error_message:expr, true) => {
         match unsafe { CStr::from_ptr($c_char_arg) }.to_str() {
@@ -65,6 +67,7 @@ macro_rules! parse_c_char {
 
 /// Boxes a value that is being returned to the external code
 #[macro_export]
+#[cfg(not(feature = "rlib"))]
 macro_rules! box_out {
     ($data:expr) => {
         Box::into_raw(Box::new($data))

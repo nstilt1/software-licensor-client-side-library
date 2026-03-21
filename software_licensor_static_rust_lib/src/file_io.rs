@@ -335,7 +335,7 @@ pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, p
 /// Returns Err(LicensingError) if the license is inactive, including the 
 /// user's license code for reference or saving into the license file.
 #[inline(always)]
-pub(crate) async fn check_key_file_async<L: LicenseDataTrait>(
+pub(crate) async fn check_key_file_async(
     license_file: Option<&mut ClientSideDataStorage>, 
     store_id: &str, 
     company_name_str: &str, 
@@ -343,7 +343,7 @@ pub(crate) async fn check_key_file_async<L: LicenseDataTrait>(
     machine_id: &str, 
     should_send_request: bool, 
     api_key: String
-) -> Result<L, Error> {
+) -> Result<LicenseData, Error> {
     let mut license_file = match license_file {
         Some(file) => file,
         None => &mut get_or_init_license_file(company_name_str, api_key.clone()).await?
@@ -356,7 +356,7 @@ pub(crate) async fn check_key_file_async<L: LicenseDataTrait>(
     };
     let license_code: String = match license_data.license_code.len() < 16 {
         true => return Err(Error::LicensingError((2, license_data.license_code.clone()).into())),
-        false => license_data.license_code
+        false => license_data.license_code.clone()
     }.to_owned();
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
     let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
@@ -383,7 +383,7 @@ pub(crate) async fn check_key_file_async<L: LicenseDataTrait>(
             Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
         };
         if key_file.message_code != 1 && key_file.message_code < 512 {
-            return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, LicensingError::from((key_file.message_code as i32, license_code.clone())), api_key))
+            return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, LicensingError::from((key_file.message_code as u32, license_code.clone())), api_key))
         }
         if key_file.message_code >= 512 {
             return Err(

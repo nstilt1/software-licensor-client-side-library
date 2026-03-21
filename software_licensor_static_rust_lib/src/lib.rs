@@ -7,7 +7,7 @@ use std::ffi::{CString, CStr};
 use std::time::Duration;
 
 use api::activate_license_request;
-use file_io::{check_key_file_async, get_or_init_hwinfo_file, get_or_init_license_file, save_hw_info_file};
+use file_io::{check_key_file_async, get_or_init_hw_info_file, get_or_init_license_file, save_hw_info_file};
 use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyFile, Stats};
 use tokio::runtime::Runtime;
 
@@ -49,6 +49,7 @@ pub struct LicenseData {
 }
 
 #[cfg(feature = "rlib")]
+#[derive(Debug, Clone)]
 pub struct LicenseData {
     pub result_code: i32,
     pub customer_first_name: String,

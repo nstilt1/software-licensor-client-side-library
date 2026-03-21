@@ -1,5 +1,11 @@
-use crate::{LicenseDataTrait, file_io::check_key_file_async, generated::software_licensor_client::Stats, now};
+use crate::{LicenseDataTrait, file_io::check_key_file_async, generated::software_licensor_client::Stats, now, stats::Language};
 use std::env::consts::{OS, ARCH};
+use crate::LicenseData;
+use std::collections::HashMap;
+use crate::file_io::{get_or_init_license_file, get_or_init_hw_info_file, save_hw_info_file};
+use tokio::time::sleep;
+use std::time::Duration;
+use crate::error::Error;
 
 const ENGLISH_STATUS_MESSAGES: &[&str] = &[
     "License is valid and unlocked.",
@@ -40,17 +46,6 @@ const SPANISH_STATUS_MESSAGES: &[&str] = &[
     "Error desconocido. Por favor, contacte con soporte con el código de error para resolver este problema.",
 ];
 
-const STATUS_LICENSE_VALID: u32        = 1 << 0;
-const STATUS_LICENSE_NOT_FOUND: u32    = 1 << 1;
-const STATUS_MACHINE_LIMIT: u32        = 1 << 2;
-const STATUS_TRIAL_ENDED: u32          = 1 << 3;
-const STATUS_LICENSE_INACTIVE: u32     = 1 << 4;
-const STATUS_OFFLINE_CODE_BAD: u32     = 1 << 5;
-const STATUS_OFFLINE_DISABLED: u32     = 1 << 6;
-const STATUS_LICENSE_INVALID: u32      = 1 << 7;
-const STATUS_MACHINE_DEACTIVATED: u32  = 1 << 8;
-const STATUS_UNKNOWN_ERROR: u32        = 1 << 9;
-
 pub struct LicenseStatus {
     pub license_data: Option<LicenseData>,
     pub store_id: String,
@@ -83,7 +78,14 @@ fn base_language(locale: &str) -> &str {
     locale.split('-').next().unwrap_or(locale)
 }
 /// Gets the status message corresponding to a status code and language.
-pub(crate) fn get_status_message_from_code(code: i32, language: &str) -> String {
+pub(crate) fn get_status_message_from_code(code: i32, language: &Language) -> String {
+    let language = if language.display_language.len() != 0 {
+        &language.display_language
+    } else if language.users_language.len() != 0 {
+        &language.users_language
+    } else {
+        "en"
+    };
     let messages = match base_language(&normalize_locale(language)) {
         "en" => ENGLISH_STATUS_MESSAGES,
         "fr" => FRENCH_STATUS_MESSAGES,
@@ -104,18 +106,20 @@ pub(crate) fn get_status_message_from_code(code: i32, language: &str) -> String 
 impl LicenseStatus {
     /// Initializes a new LicenseStatus with the given store ID
     pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>) -> Self {
-        let license_data = match get_or_init_license_file(&store_id, &company_name).await {
-            Ok(v) => Some(LicenseData {
-                result_code: v.result_code,
-                customer_first_name: v.customer_first_name,
-                customer_last_name: v.customer_last_name,
-                customer_email: v.customer_email,
-                license_type: v.license_type,
-                version: v.version,
-                error_message: v.error_message,
-                license_code: v.license_code,
-            }),
-            Err(e) => Some(LicenseData {
+        let (was_err, license_data) = match get_or_init_license_file(&store_id, company_name.to_string()).await {
+            Ok(v) => {
+                (false, Some(LicenseData {
+                    result_code: 0,
+                    customer_first_name: "".to_string(),
+                    customer_last_name: "".to_string(),
+                    customer_email: "".to_string(),
+                    license_type: "".to_string(),
+                    version: "".to_string(),
+                    error_message: "Initializing".to_string(),
+                    license_code: "".to_string(),
+                }) )
+            },
+            Err(e) => (true, Some(LicenseData {
                 result_code: i32::MAX,
                 customer_first_name: "".to_string(),
                 customer_last_name: "".to_string(),
@@ -124,33 +128,31 @@ impl LicenseStatus {
                 version: "".to_string(),
                 error_message: e.to_string(),
                 license_code: "".to_string(),
-            })
+            }))
         };
-        Self {
+        let mut result = Self {
             license_data,
             store_id: store_id.to_string(),
             company_name: company_name.to_string(),
             product_ids_and_pubkeys,
+        };
+        if !was_err {
+            result.check_license(true).await.ok();
         }
+        result
     }
     /// Checks if the license is unlocked without making an API request. This 
     /// is a quick check that can be used to determine if the license is unlocked.
     #[inline(always)]
     pub async fn is_unlocked(&self) -> bool {
-        check_key_file_async::<LicenseData>(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id).await.is_ok()
+        check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id.clone()).await.is_ok()
     }
     /// Gets the error message corresponding to the license status code, using 
     /// the appropriate language based on the machine's stats. This is a user-friendly
     /// error message that can be displayed to the user if the license is not valid.
     fn get_error_message_from_error_code(&self, codes: i32) -> String {
         let language = super::stats::language();
-        if language.display_language.len() != 0 {
-            get_status_message_from_code(codes, &language.display_language)
-        } else if language.users_language.len() != 0 {
-            get_status_message_from_code(codes, &language.users_language)
-        } else {
-            get_status_message_from_code(codes, "en")
-        }
+        get_status_message_from_code(codes, &language)
     }
     /// Checks the license, potentially making an API request to the webserver 
     /// if the bool is true and if necessary.
@@ -158,22 +160,22 @@ impl LicenseStatus {
     /// Returns Ok(true) if the license is valid and unlocked, or Ok(false) or 
     /// Err(String) with an error message if the license is not valid.
     #[inline(always)]
-    pub async fn check_license(&mut self, should_check_cloud: bool) -> Result<bool, String> {
-        let (license_data, success) = match check_key_file_async::<LicenseData>(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id).await {
+    pub async fn check_license(&mut self, should_check_cloud: bool) -> Result<(bool, LicenseData), String> {
+        let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone()).await {
             Ok(v) => (v, true),
             Err(e) => (LicenseData::error(&e.to_string()), false),
         };
-        self.license_data = Some(license_data);
+        self.license_data = Some(license_data.clone());
         if success {
-            Ok(success)
+            Ok((success, license_data))
         } else {
             Err(license_data.error_message)
         }
     }
 
     /// Reads the reply from the webserver after attempting to activate the license.
-    pub fn read_reply_from_webserver(&mut self, license_code: &str, save_system_stats: bool) -> Result<bool, String> {
-        let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats) {
+    pub async fn read_reply_from_webserver(&mut self, license_code: &str, save_system_stats: bool) -> Result<bool, String> {
+        let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats).await {
             Ok(v) => v,
             Err(e) => return Err(e.to_string()),
         };
@@ -184,18 +186,43 @@ impl LicenseStatus {
     }
 }
 
-macro_rules! detect_feature {
-    ($feature:expr) => {
-        let mut detected = false;
-        if cfg!(target_arch = "x86") || cfg!(target_arch = "x86_64") {
-            detected = std::is_x86_feature_detected!($feature);
-        } else if cfg!(target_arch = "aarch64") {
-            detected = std::is_aarch64_feature_detected!($feature);
-        } else if cfg!(target_arch = "arm") {
-            detected = std::is_arm_feature_detected!($feature);
+macro_rules! detect_x86_feature {
+    ($feature:literal) => {{
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            std::is_x86_feature_detected!($feature)
         }
-        detected
-    };
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            false
+        }
+    }};
+}
+
+macro_rules! detect_aarch64_feature {
+    ($feature:literal) => {{
+        #[cfg(target_arch = "aarch64")]
+        {
+            std::arch::is_aarch64_feature_detected!($feature)
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            false
+        }
+    }};
+}
+
+macro_rules! detect_arm_feature {
+    ($feature:literal) => {{
+        #[cfg(target_arch = "arm")]
+        {
+            std::arch::is_arm_feature_detected!($feature)
+        }
+        #[cfg(not(target_arch = "arm"))]
+        {
+            false
+        }
+    }};
 }
 
 fn get_page_size() -> Option<u32> {
@@ -258,29 +285,42 @@ pub(crate) unsafe fn get_machine_stats(save_system_stats: bool) -> Option<Stats>
             page_size: get_page_size().unwrap_or(0), 
             cpu_vendor: s.cpu_vendor, 
             cpu_model: s.cpu_model, 
-            has_mmx: detect_feature!("mmx"), 
-            has_3d_now: detect_feature!("3dnow"), 
-            has_fma3: detect_feature!("fma3"), 
-            has_fma4: detect_feature!("fma4"), 
-            has_sse: detect_feature!("sse"), 
-            has_sse2: detect_feature!("sse2"), 
-            has_sse3: detect_feature!("sse3"), 
-            has_ssse3: detect_feature!("ssse3"), 
-            has_sse41: detect_feature!("sse4.1"), 
-            has_sse42: detect_feature!("sse4.2"), 
-            has_avx: detect_feature!("avx"), 
-            has_avx2: detect_feature!("avx2"), 
-            has_avx512f: detect_feature!("avx512f"), 
-            has_avx512bw: detect_feature!("avx512bw"), 
-            has_avx512cd: detect_feature!("avx512cd"), 
-            has_avx512dq: detect_feature!("avx512dq"), 
-            has_avx512er: detect_feature!("avx512er"), 
-            has_avx512ifma: detect_feature!("avx512ifma"), 
-            has_avx512pf: detect_feature!("avx512pf"),
-            has_avx512vbmi: detect_feature!("avx512vbmi"), 
-            has_avx512vl: detect_feature!("avx512vl"), 
-            has_avx512vpopcntdq: detect_feature!("avx512vpopcntdq"), 
-            has_neon: detect_feature!("neon"), 
+            has_mmx: detect_x86_feature!("mmx"),
+            has_3d_now: false,
+            has_fma3: detect_x86_feature!("fma"),
+            has_fma4: false,
+            has_sse: detect_x86_feature!("sse"),
+            has_sse2: detect_x86_feature!("sse2"),
+            has_sse3: detect_x86_feature!("sse3"),
+            has_ssse3: detect_x86_feature!("ssse3"),
+            has_sse41: detect_x86_feature!("sse4.1"),
+            has_sse42: detect_x86_feature!("sse4.2"),
+            has_avx: detect_x86_feature!("avx"),
+            has_avx2: detect_x86_feature!("avx2"),
+            has_avx512f: detect_x86_feature!("avx512f"),
+            has_avx512bw: detect_x86_feature!("avx512bw"),
+            has_avx512cd: detect_x86_feature!("avx512cd"),
+            has_avx512dq: detect_x86_feature!("avx512dq"),
+            has_avx512er: detect_x86_feature!("avx512er"),
+            has_avx512ifma: detect_x86_feature!("avx512ifma"),
+            has_avx512pf: detect_x86_feature!("avx512pf"),
+            has_avx512vbmi: detect_x86_feature!("avx512vbmi"),
+            has_avx512vl: detect_x86_feature!("avx512vl"),
+            has_avx512vpopcntdq: detect_x86_feature!("avx512vpopcntdq"),
+            has_neon: {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    true
+                }
+                #[cfg(target_arch = "arm")]
+                {
+                    detect_arm_feature!("neon")
+                }
+                #[cfg(not(any(target_arch = "aarch64", target_arch = "arm")))]
+                {
+                    false
+                }
+            },
         })
     }
 }
@@ -319,115 +359,45 @@ async unsafe fn update_machine_info(save_system_stats: bool) {
 }
 
 #[inline(always)]
-fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool) -> Result<bool, String> {
-    let rt = runtime!(true);
+async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool) -> Result<bool, String> {
+    // Safety: This function is called while using save_system_stats.
+    unsafe {
+        update_machine_info(save_system_stats).await;
+    }
+    let mut license_file = match get_or_init_license_file(company_name, store_id.to_string()).await {
+        Ok(v) => v,
+        Err(e) => return Err(e.to_string())
+    };
 
-    rt.block_on(async {
-        // Safety: This function is called while using save_system_stats.
-        unsafe {
-            update_machine_info(save_system_stats).await;
+    let machine_id = super::stats::device_id();
+
+    match crate::api::activate_license_request(
+        store_id, 
+        company_name, 
+        &product_ids_and_pubkeys.keys().collect::<Vec<&String>>(),
+        &machine_id, 
+        license_code,
+        &mut license_file,
+    ).await {
+        Ok(v) => (),
+        Err(e) => {
+            sleep(Duration::from_secs(5)).await;
+            return Err(e.to_string())
         }
-        let mut license_file = match get_or_init_license_file(company_name, store_id).await {
-            Ok(v) => v,
-            Err(e) => return Err(e.to_string())
-        };
-
-        let machine_id = super::stats::device_id();
-
-        match activate_license_request(
-            store_id, 
-            company_name, 
-            product_ids_and_pubkeys.keys().collect::<Vec<&String>>(),
-            machine_id, 
-            license_code,
-            &mut license_file,
-        ).await {
-            Ok(v) => (),
-            Err(e) => {
-                sleep(Duration::from_secs(5)).await;
-                match e {
-                    Error::LicensingError(v) => return Err(v.to_string()),
-                    _ => return Err(e.to_string())
-                }
-            }
+    }
+    match check_key_file_async(
+        Some(&mut license_file),
+        store_id, 
+        company_name, 
+        &product_ids_and_pubkeys, 
+        &super::stats::device_id(),
+        false,
+        store_id.to_string(),
+    ).await {
+        Ok(v) => return Ok(true),
+        Err(e) => {
+            sleep(Duration::from_secs(5)).await;
+            return Err(e.to_string())
         }
-        match check_key_file_async(
-            Some(&mut license_file),
-            store_id, 
-            company_name, 
-            &product_ids_and_pubkeys_hashmap, 
-            &super::stats::device_id(),
-            false,
-            store_id.to_string(),
-        ).await {
-            Ok(v) => return Ok(true),
-            Err(e) => {
-                match e {
-                    Error::LicensingError(v) => return Err(v.to_string()),
-                    _ => return Err(e.to_string())
-                }
-            }
-        }
-    });
-    return Err("Failed to read reply from webserver".to_string());
-}
-
-#[inline(always)]
-fn check_license(
-    company_name: &str, 
-    store_id: &str, 
-    product_ids_and_pubkeys: &HashMap<String, String>
-) -> Result<LicenseActivationResponse, Error> {
-    let rt = runtime!(true);
-
-    rt.block_on(async {
-        match check_key_file_async(
-            None,
-            store_id, 
-            company_name, 
-            &product_ids_and_pubkeys_hashmap, 
-            machine_id,
-            true,
-            store_id.to_string(),
-        ).await {
-            Ok(v) => return Ok(v),
-            Err(e) => {
-                match e {
-                    Error::LicensingError(v) => return Err(v.to_string()),
-                    _ => return Err(e.to_string())
-                }
-            }
-        }
-    });
-    return Err("Failed to check license".to_string());
-}
-
-#[inline(always)]
-fn check_license_no_api_request(
-    company_name: &str, 
-    store_id: &str, 
-    product_ids_and_pubkeys: &HashMap<String, String>
-) -> Result<LicenseActivationResponse, Error> {
-    let rt = runtime!(true);
-
-    rt.block_on(async {
-        match check_key_file_async(
-            None,
-            store_id, 
-            company_name, 
-            &product_ids_and_pubkeys_hashmap, 
-            machine_id,
-            false,
-            store_id.to_string(),
-        ).await {
-            Ok(v) => return Ok(v),
-            Err(e) => {
-                match e {
-                    Error::LicensingError(v) => return Err(v.to_string()),
-                    _ => return Err(e.to_string())
-                }
-            }
-        }
-    });
-    return Err("Failed to check license".to_string());
+    }
 }

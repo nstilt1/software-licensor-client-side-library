@@ -11,7 +11,7 @@ use sha2::{Digest, Sha384};
 
 pub(crate) type EcdsaDigest = Sha384;
 
-use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hwinfo_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, decrypt_info::ClientEcdhPubkey}, now};
+use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hw_info_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, decrypt_info::ClientEcdhPubkey}, now};
 
 /// Gets the Software Licensor Public Keys.
 pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
@@ -57,7 +57,7 @@ pub(crate) async fn activate_license_request(
     let mut truncated_store_id = store_id.to_string();
     truncated_store_id.truncate(20);
     
-    let hw_info = get_or_init_hwinfo_file()?;
+    let hw_info = get_or_init_hw_info_file().await?;
 
     let mut product_id_hashmap: HashMap<String, ()> = HashMap::with_capacity(product_ids.len());
     product_ids.iter().for_each(|product_id| {
@@ -112,7 +112,7 @@ pub(crate) async fn activate_license_request(
     };
     if let Some(e) = next_ecdh_key.expiration {
         if e < now() {
-            get_pubkeys(license_file, true);
+            get_pubkeys(license_file, true).await?;
             next_ecdh_key = license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?;
         }
     }
