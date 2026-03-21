@@ -11,7 +11,7 @@ use sha2::{Digest, Sha384};
 
 pub(crate) type EcdsaDigest = Sha384;
 
-use crate::{error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hwinfo_file, save_license_file}, generated::software_licensor_client::{decrypt_info::ClientEcdhPubkey, ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response}, LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL};
+use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hwinfo_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, decrypt_info::ClientEcdhPubkey}, now};
 
 /// Gets the Software Licensor Public Keys.
 pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
@@ -111,7 +111,7 @@ pub(crate) async fn activate_license_request(
         }
     };
     if let Some(e) = next_ecdh_key.expiration {
-        if e < SystemTime::now().duration_since(UNIX_EPOCH).expect("should be fine").as_secs() {
+        if e < now() {
             get_pubkeys(license_file, true);
             next_ecdh_key = license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?;
         }
@@ -157,7 +157,7 @@ pub(crate) async fn activate_license_request(
     };
 
     let mut server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server's ECDSA key was missing in the license file")?;
-    if server_ecdsa_key.expiration < SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() {
+    if server_ecdsa_key.expiration < now() {
         get_pubkeys(license_file, false).await?;
         server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server ECDSA key was not set in the license file")?;
     }
@@ -168,7 +168,7 @@ pub(crate) async fn activate_license_request(
         data,
         decryption_info: Some(decryption_info),
         server_ecdsa_key_id: server_ecdsa_key.ecdsa_key_id.clone(),
-        timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+        timestamp: now(),
     };
 
     let response = Client::new()

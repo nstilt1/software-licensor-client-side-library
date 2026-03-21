@@ -17,6 +17,16 @@ mod error;
 mod file_io;
 mod macros;
 
+#[inline(always)]
+pub(crate) fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("Time went backwards").as_secs()
+}
+
+#[cfg(feature = "rlib")]
+pub mod lib_api;
+#[cfg(feature = "rlib")]
+pub(crate) mod stats;
+
 use error::{Error, LicensingError};
 use tokio::time::sleep;
 
@@ -25,6 +35,7 @@ use tokio::time::sleep;
 const PUBLIC_KEY_REPO_URL: &str = "https://software-licensor-public-keys.s3.amazonaws.com/public_keys";
 const LICENSE_ACTIVATION_URL: &str = "https://01lzc0nx9e.execute-api.us-east-1.amazonaws.com/v2/license_activation_refactor";
 
+#[cfg(not(feature = "rlib"))]
 #[repr(C)]
 pub struct LicenseData {
     result_code: c_int,
@@ -37,8 +48,28 @@ pub struct LicenseData {
     license_code: *mut c_char
 }
 
-impl LicenseData {
-    pub(crate) fn new(
+#[cfg(feature = "rlib")]
+pub struct LicenseData {
+    pub result_code: i32,
+    pub customer_first_name: String,
+    pub customer_last_name: String,
+    pub customer_email: String,
+    pub license_type: String,
+    pub version: String,
+    pub error_message: String,
+    pub license_code: String,
+}
+
+pub(crate) trait LicenseDataTrait {
+    fn new(int_result: i32, first_name: &str, last_name: &str, email: &str, license_type: &str, version: &str, error_message: &str, license_code: &str) -> Self;
+    fn error(message: &str) -> Self;
+    fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: i32) -> Self;
+    fn licensing_error(licensing_error: &LicensingError) -> Self;
+}
+
+impl LicenseDataTrait for LicenseData {
+    #[cfg(not(feature = "rlib"))]
+    fn new(
         int_result: c_int, 
         first_name: &str, 
         last_name: &str, 
@@ -59,7 +90,20 @@ impl LicenseData {
             license_code: CString::new(license_code).expect("CString::new failed").into_raw()
         }
     }
-    pub(crate) fn error(message: &str) -> Self {
+    #[cfg(feature = "rlib")]
+    fn new(int_result: i32, first_name: &str, last_name: &str, email: &str, license_type: &str, version: &str, error_message: &str, license_code: &str) -> Self {
+        Self {
+            result_code: int_result,
+            customer_first_name: first_name.to_string(),
+            customer_last_name: last_name.to_string(),
+            customer_email: email.to_string(),
+            license_type: license_type.to_string(),
+            version: version.to_string(),
+            error_message: error_message.to_string(),
+            license_code: license_code.to_string(),
+        }
+    }
+    fn error(message: &str) -> Self {
         Self::new(
             -1, 
             "Error", 
@@ -71,7 +115,7 @@ impl LicenseData {
             "Error"
         )
     }
-    pub(crate) fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: c_int) -> Self {
+    fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: c_int) -> Self {
         Self::new(
             status_code, 
             &license_response.customer_first_name, 
@@ -83,7 +127,7 @@ impl LicenseData {
             &key_file.license_code
         )
     }
-    pub(crate) fn licensing_error(licensing_error: &LicensingError) -> Self {
+    fn licensing_error(licensing_error: &LicensingError) -> Self {
         let (error_code, license_code) = licensing_error.get_error_and_license_codes();
         Self::new(error_code as c_int, "", "", "", "", "", "", &license_code)
     }
@@ -96,6 +140,7 @@ impl LicenseData {
 /// the JUCE library.
 #[no_mangle]
 #[inline(always)]
+#[cfg(not(feature = "rlib"))]
 pub extern "C" fn update_machine_info(
     save_system_stats: bool, 
     os_name: *const c_char, 
@@ -146,7 +191,7 @@ pub extern "C" fn update_machine_info(
     };
 
     rt.block_on(async {
-        let mut hw_info_file = match get_or_init_hwinfo_file() {
+        let mut hw_info_file = match get_or_init_hw_info_file().await {
             Ok(v) => v,
             Err(_) => return
         };
@@ -208,6 +253,7 @@ pub extern "C" fn update_machine_info(
 /// Deallocate license data after C++ code has evaluated/copied the data
 #[no_mangle]
 #[inline(always)]
+#[cfg(not(feature = "rlib"))]
 pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
     if !ptr.is_null() {
         // Reconstitute the Box to take ownership back from C++
@@ -239,6 +285,7 @@ pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
 
 #[no_mangle]
 #[inline(always)]
+#[cfg(not(feature = "rlib"))]
 pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, license_code: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
@@ -281,7 +328,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
                 }
             }
         };
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
+        match check_key_file_async(Some(&mut license_file), store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
             Ok(v) => return box_out!(v),
             Err(e) => {
                 match e {
@@ -310,6 +357,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
 /// * `len` - the length of the `product_ids_and_pubkeys` array 
 #[no_mangle]
 #[inline(always)]
+#[cfg(not(feature = "rlib"))]
 pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
@@ -339,7 +387,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true, store_id_str.to_string()).await {
+        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true, store_id_str.to_string()).await {
             Ok(v) => {
                 box_out!(v)
             },
@@ -367,6 +415,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
 /// `check_license`.
 #[no_mangle]
 #[inline(always)]
+#[cfg(not(feature = "rlib"))]
 pub extern "C" fn check_license_no_api_request(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
@@ -394,7 +443,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
+        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
             Ok(v) => {
                 return box_out!(v)
             },

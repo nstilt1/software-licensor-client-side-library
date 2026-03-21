@@ -13,7 +13,7 @@ use sha2::Digest;
 use crate::error::{Error, LicensingError};
 use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseKeyFile};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
-use crate::LicenseData;
+use crate::{LicenseData, LicenseDataTrait};
 use crate::generated::software_licensor_client::LicenseData as LicenseDataProto;
 
 /// Gets the path to where the license file will be created.
@@ -122,7 +122,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
     }
 }
 
-pub(crate) fn get_or_init_hwinfo_file() -> Result<ClientSideHwInfoStorage, Error> {
+pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage, Error> {
     let path = get_machine_stats_path()?;
 
     if path.exists() {
@@ -310,19 +310,54 @@ pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, p
     licensing_error.into()
 }
 
+/// Checks the key file and verifies the signature, while also checking 
+/// for updates from the cloud, and if the key file is expired.
+/// 
+/// # Arguments
+/// 
+/// - `license_file`: The license file to use, if you have access to it already.
+/// If you don't already have access to the license file, you can pass in `None`.
+/// - `store_id`: The API Key/Store ID.
+/// - `company_name_str`: The company name, which is used to name the directory 
+/// for the license file.
+/// - `product_ids_and_pubkeys`: A hashmap of product IDs to their corresponding 
+/// publick keys, which is used to verify the signature on the key file.
+/// - `machine_id`: The machine ID, which is used to check if the license file 
+/// is being used on the correct machine.
+/// - `should_send_request`: Whether to send a request to the cloud to check for 
+/// an updated license.
+/// - `api_key`: The API key, aka the store ID.
+/// 
+/// # Returns
+/// 
+/// Returns Ok(LicenseData) only if the license is active.
+/// 
+/// Returns Err(LicensingError) if the license is inactive, including the 
+/// user's license code for reference or saving into the license file.
 #[inline(always)]
-pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str, product_ids_and_pubkeys: &HashMap<String, String>, machine_id: &str, should_send_request: bool, api_key: String) -> Result<LicenseData, Error> {
-    let mut license_file = get_or_init_license_file(company_name_str, api_key.clone()).await?;
+pub(crate) async fn check_key_file_async<L: LicenseDataTrait>(
+    license_file: Option<&mut ClientSideDataStorage>, 
+    store_id: &str, 
+    company_name_str: &str, 
+    product_ids_and_pubkeys: &HashMap<String, String>, 
+    machine_id: &str, 
+    should_send_request: bool, 
+    api_key: String
+) -> Result<L, Error> {
+    let mut license_file = match license_file {
+        Some(file) => file,
+        None => &mut get_or_init_license_file(company_name_str, api_key.clone()).await?
+    };
     let mut trimmed_api_key = api_key.clone();
     trimmed_api_key.truncate(20);
     let license_data = match license_file.license_data.get_mut(&trimmed_api_key) {
         Some(v) => v,
         None => return Err(Error::LicensingError((2, "".to_string()).into()))
     };
-    let license_code = match license_data.license_code.len() < 16 {
+    let license_code: String = match license_data.license_code.len() < 16 {
         true => return Err(Error::LicensingError((2, license_data.license_code.clone()).into())),
-        false => license_data.license_code.clone()
-    };
+        false => license_data.license_code
+    }.to_owned();
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
     let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
         Ok(v) => v,
@@ -347,11 +382,29 @@ pub(crate) async fn check_key_file_async(store_id: &str, company_name_str: &str,
             Ok(v) => v,
             Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
         };
-        if key_file.message_code != 1 {
-            return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32))
+        if key_file.message_code != 1 && key_file.message_code < 512 {
+            return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, LicensingError::from((key_file.message_code as i32, license_code.clone())), api_key))
+        }
+        if key_file.message_code >= 512 {
+            return Err(
+                handle_licensing_error(
+                    &mut license_file, 
+                    &product_ids, 
+                    company_name_str, 
+                    LicensingError::UnknownError((
+                        key_file.message_code, 
+                        format!("Unknown error: {}", key_file.message)
+                    )), 
+                    api_key
+                ))
         }
         if key_file.expiration_timestamp < now {
-            return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
+            let err = if key_file.post_expiration_error_code == 16 {
+                LicensingError::LicenseNoLongerActive(license_code)
+            } else {
+                LicensingError::TrialEnded(license_code)
+            };
+            return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, err, store_id.to_string()))
         }
     }
     if key_file.check_back_timestamp < now && should_send_request {

@@ -1,0 +1,433 @@
+use crate::{LicenseDataTrait, file_io::check_key_file_async, generated::software_licensor_client::Stats, now};
+use std::env::consts::{OS, ARCH};
+
+const ENGLISH_STATUS_MESSAGES: &[&str] = &[
+    "License is valid and unlocked.",
+    "License not found.",
+    "Machine limit reached. You can regenerate your license code to remove old machines from your license.",
+    "Your trial has ended. Please purchase a license to continue using all the features.",
+    "Your license is inactive. Please renew your license to continue using all the features.",
+    "The offline code was incorrect.",
+    "Offline codes are disabled for this software.",
+    "The license code is invalid.",
+    "This machine has been deactivated. Please enter another license code.",
+    "Unknown error. Please contact support with the error code to resolve this issue.",
+];
+
+const FRENCH_STATUS_MESSAGES: &[&str] = &[
+    "La licence est valide et déverrouillée.",
+    "Licence introuvable.",
+    "Limite de machines atteinte. Vous pouvez régénérer votre code de licence pour supprimer les anciennes machines de votre licence.",
+    "Votre période d’essai est terminée. Veuillez acheter une licence pour continuer à utiliser toutes les fonctionnalités.",
+    "Votre licence est inactive. Veuillez renouveler votre licence pour continuer à utiliser toutes les fonctionnalités.",
+    "Le code hors ligne est incorrect.",
+    "Les codes hors ligne sont désactivés pour ce logiciel.",
+    "Le code de licence est invalide.",
+    "Cette machine a été désactivée. Veuillez saisir un autre code de licence.",
+    "Erreur inconnue. Veuillez contacter le support avec le code d’erreur afin de résoudre ce problème.",
+];
+
+const SPANISH_STATUS_MESSAGES: &[&str] = &[
+    "La licencia es válida y está desbloqueada.",
+    "Licencia no encontrada.",
+    "Se alcanzó el límite de dispositivos. Puede regenerar su código de licencia para eliminar los dispositivos antiguos de su licencia.",
+    "Su período de prueba ha finalizado. Por favor, compre una licencia para seguir usando todas las funciones.",
+    "Su licencia está inactiva. Por favor, renueve su licencia para seguir usando todas las funciones.",
+    "El código sin conexión es incorrecto.",
+    "Los códigos sin conexión están deshabilitados para este software.",
+    "El código de licencia no es válido.",
+    "Este dispositivo ha sido desactivado. Por favor, introduzca otro código de licencia.",
+    "Error desconocido. Por favor, contacte con soporte con el código de error para resolver este problema.",
+];
+
+const STATUS_LICENSE_VALID: u32        = 1 << 0;
+const STATUS_LICENSE_NOT_FOUND: u32    = 1 << 1;
+const STATUS_MACHINE_LIMIT: u32        = 1 << 2;
+const STATUS_TRIAL_ENDED: u32          = 1 << 3;
+const STATUS_LICENSE_INACTIVE: u32     = 1 << 4;
+const STATUS_OFFLINE_CODE_BAD: u32     = 1 << 5;
+const STATUS_OFFLINE_DISABLED: u32     = 1 << 6;
+const STATUS_LICENSE_INVALID: u32      = 1 << 7;
+const STATUS_MACHINE_DEACTIVATED: u32  = 1 << 8;
+const STATUS_UNKNOWN_ERROR: u32        = 1 << 9;
+
+pub struct LicenseStatus {
+    pub license_data: Option<LicenseData>,
+    pub store_id: String,
+    pub company_name: String,
+    pub product_ids_and_pubkeys: HashMap<String, String>,
+
+}
+
+/// Normalizes a locale string.
+fn normalize_locale(s: &str) -> String {
+    let mut s = s.trim().to_lowercase();
+
+    // Remove encoding (e.g. .UTF-8)
+    if let Some(idx) = s.find('.') {
+        s.truncate(idx);
+    }
+
+    // Remove modifiers (e.g. @euro)
+    if let Some(idx) = s.find('@') {
+        s.truncate(idx);
+    }
+
+    // Normalize separator
+    s = s.replace('_', "-");
+
+    s
+}
+/// Extracts the base language from a locale string (e.g. "en" from "en-US").
+fn base_language(locale: &str) -> &str {
+    locale.split('-').next().unwrap_or(locale)
+}
+/// Gets the status message corresponding to a status code and language.
+pub(crate) fn get_status_message_from_code(code: i32, language: &str) -> String {
+    let messages = match base_language(&normalize_locale(language)) {
+        "en" => ENGLISH_STATUS_MESSAGES,
+        "fr" => FRENCH_STATUS_MESSAGES,
+        "es" => SPANISH_STATUS_MESSAGES,
+        _ => ENGLISH_STATUS_MESSAGES,
+    };
+
+    for m in 0..8 {
+        if code & (1 << m) != 0 {
+            if let Some(msg) = messages.get(m) {
+                return msg.to_string();
+            }
+        }
+    }
+    messages.last().unwrap_or(&"Unknown status code. Please contact support.").to_string()
+}
+
+impl LicenseStatus {
+    /// Initializes a new LicenseStatus with the given store ID
+    pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>) -> Self {
+        let license_data = match get_or_init_license_file(&store_id, &company_name).await {
+            Ok(v) => Some(LicenseData {
+                result_code: v.result_code,
+                customer_first_name: v.customer_first_name,
+                customer_last_name: v.customer_last_name,
+                customer_email: v.customer_email,
+                license_type: v.license_type,
+                version: v.version,
+                error_message: v.error_message,
+                license_code: v.license_code,
+            }),
+            Err(e) => Some(LicenseData {
+                result_code: i32::MAX,
+                customer_first_name: "".to_string(),
+                customer_last_name: "".to_string(),
+                customer_email: "".to_string(),
+                license_type: "".to_string(),
+                version: "".to_string(),
+                error_message: e.to_string(),
+                license_code: "".to_string(),
+            })
+        };
+        Self {
+            license_data,
+            store_id: store_id.to_string(),
+            company_name: company_name.to_string(),
+            product_ids_and_pubkeys,
+        }
+    }
+    /// Checks if the license is unlocked without making an API request. This 
+    /// is a quick check that can be used to determine if the license is unlocked.
+    #[inline(always)]
+    pub async fn is_unlocked(&self) -> bool {
+        check_key_file_async::<LicenseData>(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id).await.is_ok()
+    }
+    /// Gets the error message corresponding to the license status code, using 
+    /// the appropriate language based on the machine's stats. This is a user-friendly
+    /// error message that can be displayed to the user if the license is not valid.
+    fn get_error_message_from_error_code(&self, codes: i32) -> String {
+        let language = super::stats::language();
+        if language.display_language.len() != 0 {
+            get_status_message_from_code(codes, &language.display_language)
+        } else if language.users_language.len() != 0 {
+            get_status_message_from_code(codes, &language.users_language)
+        } else {
+            get_status_message_from_code(codes, "en")
+        }
+    }
+    /// Checks the license, potentially making an API request to the webserver 
+    /// if the bool is true and if necessary.
+    /// 
+    /// Returns Ok(true) if the license is valid and unlocked, or Ok(false) or 
+    /// Err(String) with an error message if the license is not valid.
+    #[inline(always)]
+    pub async fn check_license(&mut self, should_check_cloud: bool) -> Result<bool, String> {
+        let (license_data, success) = match check_key_file_async::<LicenseData>(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id).await {
+            Ok(v) => (v, true),
+            Err(e) => (LicenseData::error(&e.to_string()), false),
+        };
+        self.license_data = Some(license_data);
+        if success {
+            Ok(success)
+        } else {
+            Err(license_data.error_message)
+        }
+    }
+
+    /// Reads the reply from the webserver after attempting to activate the license.
+    pub fn read_reply_from_webserver(&mut self, license_code: &str, save_system_stats: bool) -> Result<bool, String> {
+        let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats) {
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string()),
+        };
+        if !result {
+            return Err("License activation failed. Please check your internet connection and try again.".to_string());
+        }
+        Ok(result)
+    }
+}
+
+macro_rules! detect_feature {
+    ($feature:expr) => {
+        let mut detected = false;
+        if cfg!(target_arch = "x86") || cfg!(target_arch = "x86_64") {
+            detected = std::is_x86_feature_detected!($feature);
+        } else if cfg!(target_arch = "aarch64") {
+            detected = std::is_aarch64_feature_detected!($feature);
+        } else if cfg!(target_arch = "arm") {
+            detected = std::is_arm_feature_detected!($feature);
+        }
+        detected
+    };
+}
+
+fn get_page_size() -> Option<u32> {
+    #[cfg(unix)]
+    {
+        let v = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        if v <= 0 {
+            None
+        } else {
+            u32::try_from(v).ok()
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GetSystemInfo, SYSTEM_INFO};
+
+        unsafe {
+            let mut info = std::mem::zeroed::<SYSTEM_INFO>();
+            GetSystemInfo(&mut info);
+            Some(info.dwPageSize)
+        }
+    }
+
+    #[cfg(not(any(unix, target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Returns the current machine's stats. This includes various hardware 
+/// information about the machine, such as the CPU vendor, model, number of 
+/// cores, amount of RAM, and various CPU features.
+/// 
+/// # Safety
+/// 
+/// This function collects hardware information that could potentially be used to
+/// uniquely identify a machine, and therefore could be a privacy concern. It is 
+/// the caller's responsibility to ensure that this function is only called when 
+/// the user has explicitly opted in to the collection of this information.
+#[inline(always)]
+pub(crate) unsafe fn get_machine_stats(save_system_stats: bool) -> Option<Stats> {
+    if !save_system_stats {
+        return None;
+    }
+    unsafe {
+        let s = super::stats::Stats::collect();
+
+        return Some(Stats { 
+            os_name: OS.to_string(), 
+            computer_name: s.computer_name, 
+            is_64_bit: if size_of::<usize>() == 8 { true } else { false }, 
+            users_language: s.users_language, 
+            display_language: s.display_language, 
+            num_logical_cores: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as u32, 
+            num_physical_cores: s.num_physical_cores, 
+            cpu_freq_mhz: s.cpu_freq_mhz, 
+            cpu_archictecture: ARCH.to_string(), 
+            ram_mb: s.ram_mb, 
+            page_size: get_page_size().unwrap_or(0), 
+            cpu_vendor: s.cpu_vendor, 
+            cpu_model: s.cpu_model, 
+            has_mmx: detect_feature!("mmx"), 
+            has_3d_now: detect_feature!("3dnow"), 
+            has_fma3: detect_feature!("fma3"), 
+            has_fma4: detect_feature!("fma4"), 
+            has_sse: detect_feature!("sse"), 
+            has_sse2: detect_feature!("sse2"), 
+            has_sse3: detect_feature!("sse3"), 
+            has_ssse3: detect_feature!("ssse3"), 
+            has_sse41: detect_feature!("sse4.1"), 
+            has_sse42: detect_feature!("sse4.2"), 
+            has_avx: detect_feature!("avx"), 
+            has_avx2: detect_feature!("avx2"), 
+            has_avx512f: detect_feature!("avx512f"), 
+            has_avx512bw: detect_feature!("avx512bw"), 
+            has_avx512cd: detect_feature!("avx512cd"), 
+            has_avx512dq: detect_feature!("avx512dq"), 
+            has_avx512er: detect_feature!("avx512er"), 
+            has_avx512ifma: detect_feature!("avx512ifma"), 
+            has_avx512pf: detect_feature!("avx512pf"),
+            has_avx512vbmi: detect_feature!("avx512vbmi"), 
+            has_avx512vl: detect_feature!("avx512vl"), 
+            has_avx512vpopcntdq: detect_feature!("avx512vpopcntdq"), 
+            has_neon: detect_feature!("neon"), 
+        })
+    }
+}
+
+/// Updates the machine info file with the latest machine stats, if the bool is 
+/// set to true. If the bool is set to false, the machine stats are removed from 
+/// the machine info file.
+/// 
+/// # Safety
+/// 
+/// This is the only function that uses the `unsafe fn get_machine_stats()`, 
+/// which collects various hardware information about the machine. This function 
+/// is marked as unsafe because it collects hardware information that could potentially
+/// be used to uniquely identify a machine, and therefore could be a privacy concern.
+#[inline(always)]
+async unsafe fn update_machine_info(save_system_stats: bool) {
+    let mut hw_info_file = match get_or_init_hw_info_file().await {
+        Ok(v) => v,
+        Err(_) => return
+    };
+
+    // Safety: `current_stats` is none when save_system_stats is false.
+    unsafe {
+        let current_stats = get_machine_stats(save_system_stats);
+        assert!(
+            (current_stats.is_none() && !save_system_stats) || 
+            (current_stats.is_some() && save_system_stats), 
+            "get_machine_stats should return None if save_system_stats is false, and Some if save_system_stats is true");
+        if hw_info_file.machine_stats.ne(&current_stats) {
+            hw_info_file.machine_stats = current_stats;
+            // Silent error handling since we don't want to cause any issues 
+            // for the user if we fail to save the machine stats.
+            let _result = save_hw_info_file(&hw_info_file).unwrap_or_else(|_| ());
+        }
+    }
+}
+
+#[inline(always)]
+fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool) -> Result<bool, String> {
+    let rt = runtime!(true);
+
+    rt.block_on(async {
+        // Safety: This function is called while using save_system_stats.
+        unsafe {
+            update_machine_info(save_system_stats).await;
+        }
+        let mut license_file = match get_or_init_license_file(company_name, store_id).await {
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string())
+        };
+
+        let machine_id = super::stats::device_id();
+
+        match activate_license_request(
+            store_id, 
+            company_name, 
+            product_ids_and_pubkeys.keys().collect::<Vec<&String>>(),
+            machine_id, 
+            license_code,
+            &mut license_file,
+        ).await {
+            Ok(v) => (),
+            Err(e) => {
+                sleep(Duration::from_secs(5)).await;
+                match e {
+                    Error::LicensingError(v) => return Err(v.to_string()),
+                    _ => return Err(e.to_string())
+                }
+            }
+        }
+        match check_key_file_async(
+            Some(&mut license_file),
+            store_id, 
+            company_name, 
+            &product_ids_and_pubkeys_hashmap, 
+            &super::stats::device_id(),
+            false,
+            store_id.to_string(),
+        ).await {
+            Ok(v) => return Ok(true),
+            Err(e) => {
+                match e {
+                    Error::LicensingError(v) => return Err(v.to_string()),
+                    _ => return Err(e.to_string())
+                }
+            }
+        }
+    });
+    return Err("Failed to read reply from webserver".to_string());
+}
+
+#[inline(always)]
+fn check_license(
+    company_name: &str, 
+    store_id: &str, 
+    product_ids_and_pubkeys: &HashMap<String, String>
+) -> Result<LicenseActivationResponse, Error> {
+    let rt = runtime!(true);
+
+    rt.block_on(async {
+        match check_key_file_async(
+            None,
+            store_id, 
+            company_name, 
+            &product_ids_and_pubkeys_hashmap, 
+            machine_id,
+            true,
+            store_id.to_string(),
+        ).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                match e {
+                    Error::LicensingError(v) => return Err(v.to_string()),
+                    _ => return Err(e.to_string())
+                }
+            }
+        }
+    });
+    return Err("Failed to check license".to_string());
+}
+
+#[inline(always)]
+fn check_license_no_api_request(
+    company_name: &str, 
+    store_id: &str, 
+    product_ids_and_pubkeys: &HashMap<String, String>
+) -> Result<LicenseActivationResponse, Error> {
+    let rt = runtime!(true);
+
+    rt.block_on(async {
+        match check_key_file_async(
+            None,
+            store_id, 
+            company_name, 
+            &product_ids_and_pubkeys_hashmap, 
+            machine_id,
+            false,
+            store_id.to_string(),
+        ).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                match e {
+                    Error::LicensingError(v) => return Err(v.to_string()),
+                    _ => return Err(e.to_string())
+                }
+            }
+        }
+    });
+    return Err("Failed to check license".to_string());
+}
