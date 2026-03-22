@@ -47,11 +47,9 @@ const SPANISH_STATUS_MESSAGES: &[&str] = &[
 ];
 
 pub struct LicenseStatus {
-    pub license_data: Option<LicenseData>,
     pub store_id: String,
     pub company_name: String,
     pub product_ids_and_pubkeys: HashMap<String, String>,
-
 }
 
 /// Normalizes a locale string.
@@ -109,43 +107,12 @@ impl LicenseStatus {
     /// Also runs `check_license()` during initialization to populate the 
     /// license data, and returns an error message in the license data if there was an error during initialization.
     pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>) -> Self {
-        let (was_err, license_data) = match get_or_init_license_file(&store_id, company_name.to_string()).await {
-            Ok(v) => {
-                (false, Some(LicenseData {
-                    result_code: 0,
-                    customer_first_name: "".to_string(),
-                    customer_last_name: "".to_string(),
-                    customer_email: "".to_string(),
-                    license_type: "".to_string(),
-                    version: "".to_string(),
-                    error_message: "Initializing".to_string(),
-                    license_code: "".to_string(),
-                    machine_count: None,
-                    machine_limit: None,
-                }) )
-            },
-            Err(e) => (true, Some(LicenseData {
-                result_code: i32::MAX,
-                customer_first_name: "".to_string(),
-                customer_last_name: "".to_string(),
-                customer_email: "".to_string(),
-                license_type: "".to_string(),
-                version: "".to_string(),
-                error_message: e.to_string(),
-                license_code: "".to_string(),
-                machine_count: None,
-                machine_limit: None,
-            }))
-        };
         let mut result = Self {
-            license_data,
             store_id: store_id.to_string(),
             company_name: company_name.to_string(),
             product_ids_and_pubkeys,
         };
-        if !was_err {
-            result.check_license(true).await.ok();
-        }
+        result.check_license(true).await.ok();
         result
     }
     /// Checks if the license is unlocked without making an API request. This 
