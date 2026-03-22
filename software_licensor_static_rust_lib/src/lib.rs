@@ -56,6 +56,7 @@ pub struct LicenseData {
 #[cfg(feature = "rlib")]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
 pub struct LicenseData {
     pub result_code: i32,
     pub customer_first_name: String,
@@ -65,6 +66,8 @@ pub struct LicenseData {
     pub version: String,
     pub error_message: String,
     pub license_code: String,
+    pub machine_count: Option<u32>,
+    pub machine_limit: Option<u32>,
 }
 
 impl LicenseData {
@@ -77,7 +80,9 @@ impl LicenseData {
         license_type: &str, 
         version: &str, 
         error_message: &str, 
-        license_code: &str
+        license_code: &str,
+        _machine_count: Option<u32>,
+        _machine_limit: Option<u32>
     ) -> Self {
         Self {
             result_code: int_result as c_int,
@@ -91,7 +96,7 @@ impl LicenseData {
         }
     }
     #[cfg(feature = "rlib")]
-    fn new(int_result: i32, first_name: &str, last_name: &str, email: &str, license_type: &str, version: &str, error_message: &str, license_code: &str) -> Self {
+    fn new(int_result: i32, first_name: &str, last_name: &str, email: &str, license_type: &str, version: &str, error_message: &str, license_code: &str, machine_count: Option<u32>, machine_limit: Option<u32>) -> Self {
         Self {
             result_code: int_result,
             customer_first_name: first_name.to_string(),
@@ -101,6 +106,8 @@ impl LicenseData {
             version: version.to_string(),
             error_message: error_message.to_string(),
             license_code: license_code.to_string(),
+            machine_count,
+            machine_limit,
         }
     }
     fn error(message: &str) -> Self {
@@ -112,7 +119,9 @@ impl LicenseData {
             "Error", 
             "Error", 
             message, 
-            "Error"
+            "Error",
+            None,
+            None
         )
     }
     fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: i32) -> Self {
@@ -124,12 +133,14 @@ impl LicenseData {
             &key_file.license_type, 
             &key_file.product_version, 
             "",
-            &key_file.license_code
+            &key_file.license_code,
+            key_file.current_machine_count,
+            key_file.current_machine_limit,
         )
     }
     fn licensing_error(licensing_error: &LicensingError) -> Self {
         let (error_code, license_code) = licensing_error.get_error_and_license_codes();
-        Self::new(error_code as i32, "", "", "", "", "", "", &license_code)
+        Self::new(error_code as i32, "", "", "", "", "", "", &license_code, None, None)
     }
 }
 
@@ -212,7 +223,7 @@ pub extern "C" fn update_machine_info(
             num_logical_cores: num_logical_cores as u32,
             num_physical_cores: num_physical_cores as u32,
             cpu_freq_mhz: cpu_freq_mhz as u32,
-            cpu_archictecture: std::env::consts::ARCH.to_string(),
+            cpu_architecture: std::env::consts::ARCH.to_string(),
             ram_mb: ram_mb as u32,
             page_size: page_size as u32,
             cpu_vendor: cpu_vendor_str.to_string(),

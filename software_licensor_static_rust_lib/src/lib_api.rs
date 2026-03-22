@@ -120,6 +120,8 @@ impl LicenseStatus {
                     version: "".to_string(),
                     error_message: "Initializing".to_string(),
                     license_code: "".to_string(),
+                    machine_count: None,
+                    machine_limit: None,
                 }) )
             },
             Err(e) => (true, Some(LicenseData {
@@ -131,6 +133,8 @@ impl LicenseStatus {
                 version: "".to_string(),
                 error_message: e.to_string(),
                 license_code: "".to_string(),
+                machine_count: None,
+                machine_limit: None,
             }))
         };
         let mut result = Self {
@@ -176,12 +180,12 @@ impl LicenseStatus {
     }
 
     /// Reads the reply from the webserver after attempting to activate the license.
-    pub async fn read_reply_from_webserver(&self, license_code: &str, save_system_stats: bool) -> Result<bool, String> {
+    pub async fn read_reply_from_webserver(&self, license_code: &str, save_system_stats: bool) -> Result<(bool, LicenseData), String> {
         let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats).await {
             Ok(v) => v,
             Err(e) => return Err(e.to_string()),
         };
-        if !result {
+        if !result.0 {
             return Err("License activation failed. Please check your internet connection and try again.".to_string());
         }
         Ok(result)
@@ -282,7 +286,7 @@ pub(crate) unsafe fn get_machine_stats(save_system_stats: bool) -> Option<Stats>
             num_logical_cores: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as u32, 
             num_physical_cores: s.num_physical_cores, 
             cpu_freq_mhz: s.cpu_freq_mhz, 
-            cpu_archictecture: ARCH.to_string(), 
+            cpu_architecture: ARCH.to_string(), 
             ram_mb: s.ram_mb, 
             page_size: get_page_size().unwrap_or(0), 
             cpu_vendor: s.cpu_vendor, 
@@ -361,7 +365,7 @@ async unsafe fn update_machine_info(save_system_stats: bool) {
 }
 
 #[inline(always)]
-async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool) -> Result<bool, String> {
+async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool) -> Result<(bool, LicenseData), String> {
     // Safety: This function is called while using save_system_stats.
     unsafe {
         update_machine_info(save_system_stats).await;
@@ -396,7 +400,7 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
         false,
         store_id.to_string(),
     ).await {
-        Ok(v) => return Ok(true),
+        Ok(v) => return Ok((true, v)),
         Err(e) => {
             sleep(Duration::from_secs(5)).await;
             return Err(e.to_string())

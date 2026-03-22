@@ -4,8 +4,7 @@
 /// a non-expiring one. The non-expiring one is meant to only be used once
 /// as well, and the response from the server will contain a new public
 /// key for the next request.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExpiringEcdhKey {
     #[prost(bytes = "vec", tag = "1")]
     pub ecdh_key_id: ::prost::alloc::vec::Vec<u8>,
@@ -16,8 +15,7 @@ pub struct ExpiringEcdhKey {
     #[prost(uint64, optional, tag = "8")]
     pub expiration: ::core::option::Option<u64>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExpiringEcdsaKey {
     #[prost(bytes = "vec", tag = "1")]
     pub ecdsa_key_id: ::prost::alloc::vec::Vec<u8>,
@@ -28,7 +26,6 @@ pub struct ExpiringEcdsaKey {
     #[prost(uint64, tag = "3")]
     pub expiration: u64,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PubkeyRepo {
     /// randomly select an ECDH key from this list of keys.
@@ -38,8 +35,7 @@ pub struct PubkeyRepo {
     pub ecdsa_key: ::core::option::Option<ExpiringEcdsaKey>,
 }
 /// Some information that is necessary for the server to decrypt the request
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DecryptInfo {
     /// the ecdh key used for decrypting the request
     #[prost(bytes = "vec", tag = "1")]
@@ -59,8 +55,7 @@ pub struct DecryptInfo {
 pub mod decrypt_info {
     /// the client's ecdh pubkey for decrypting the request. This can
     /// be PEM encoded or DER encoded
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum ClientEcdhPubkey {
         #[prost(string, tag = "5")]
         Pem(::prost::alloc::string::String),
@@ -69,8 +64,7 @@ pub mod decrypt_info {
     }
 }
 /// An API request to the Service.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Request {
     /// this value allows the client to decide which symmetric encryption
     /// algorithm will be used for the request and response. The server may
@@ -95,8 +89,7 @@ pub struct Request {
     pub timestamp: u64,
 }
 /// Some ecdh key information
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct EcdhKey {
     #[prost(bytes = "vec", tag = "1")]
     pub ecdh_key_id: ::prost::alloc::vec::Vec<u8>,
@@ -115,8 +108,7 @@ pub struct EcdhKey {
 ///
 /// There will be a signature stored in the `Signature` header, which is
 /// computed from a hash of this encoded structure.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Response {
     /// Encrypted payload with the nonce prefixed to the encrypted data
     #[prost(bytes = "vec", tag = "2")]
@@ -130,8 +122,7 @@ pub struct Response {
     pub timestamp: u64,
 }
 /// The data required for license activation
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LicenseActivationRequest {
     /// the license code. should look like:
     /// 1234-5678-90ab-cdef-1234
@@ -149,8 +140,7 @@ pub struct LicenseActivationRequest {
     pub product_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Optional hardware statistics
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Stats {
     #[prost(string, tag = "1")]
     pub os_name: ::prost::alloc::string::String,
@@ -169,7 +159,7 @@ pub struct Stats {
     #[prost(uint32, tag = "8")]
     pub cpu_freq_mhz: u32,
     #[prost(string, tag = "40")]
-    pub cpu_archictecture: ::prost::alloc::string::String,
+    pub cpu_architecture: ::prost::alloc::string::String,
     #[prost(uint32, tag = "34")]
     pub ram_mb: u32,
     #[prost(uint32, tag = "35")]
@@ -226,8 +216,7 @@ pub struct Stats {
     pub has_neon: bool,
 }
 /// A license key file for a product
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LicenseKeyFile {
     #[prost(string, tag = "1")]
     pub product_id: ::prost::alloc::string::String,
@@ -269,12 +258,15 @@ pub struct LicenseKeyFile {
     /// the message to show if the license ever expires on the user
     #[prost(uint32, tag = "35")]
     pub post_expiration_error_code: u32,
+    #[prost(uint32, optional, tag = "40")]
+    pub current_machine_count: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "41")]
+    pub current_machine_limit: ::core::option::Option<u32>,
 }
 /// The license activation response.
 ///
 /// Note: the response could be of a different format—either a number as a string
 /// or a text string
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LicenseActivationResponse {
     /// map of product ids to license key files
@@ -304,8 +296,7 @@ pub struct LicenseActivationResponse {
 }
 /// A compact version of `EcdhKey` that has the `ecdh_public_key_pem` field
 /// redacted to save space.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CompactServerEcdhKey {
     #[prost(bytes = "vec", tag = "1")]
     pub ecdh_key_id: ::prost::alloc::vec::Vec<u8>,
@@ -316,8 +307,7 @@ pub struct CompactServerEcdhKey {
 }
 /// A compact version of `ExpiringEcdsaKey` that has the PEM field redacted to
 /// save space.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CompactServerEcdsaKey {
     #[prost(bytes = "vec", tag = "1")]
     pub ecdsa_key_id: ::prost::alloc::vec::Vec<u8>,
@@ -339,7 +329,6 @@ pub struct CompactServerEcdsaKey {
 ///
 /// And another note about cracking, if there is enough demand for your software,
 /// it will be cracked. No amount of DRM will stop a determined person.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClientSideDataStorage {
     /// hashmap of Store IDs to license activation responses. This prevents
@@ -359,14 +348,12 @@ pub struct ClientSideDataStorage {
     #[prost(message, optional, tag = "5")]
     pub server_ecdsa_key: ::core::option::Option<CompactServerEcdsaKey>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClientSideHwInfoStorage {
     /// optional machine stats; will be None if the user doesn't consent
     #[prost(message, optional, tag = "1")]
     pub machine_stats: ::core::option::Option<Stats>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LicenseData {
     #[prost(message, optional, tag = "1")]

@@ -122,7 +122,7 @@ message Stats {
     uint32 num_logical_cores = 6;
     uint32 num_physical_cores = 7;
     uint32 cpu_freq_mhz = 8;
-    string cpu_archictecture = 40;
+    string cpu_architecture = 40;
     uint32 ram_mb = 34;
     uint32 page_size = 35;
     string cpu_vendor = 9;
@@ -183,6 +183,8 @@ message LicenseKeyFile {
     uint32 message_code = 31;
     // the message to show if the license ever expires on the user
     uint32 post_expiration_error_code = 35;
+    optional uint32 current_machine_count = 40;
+    optional uint32 current_machine_limit = 41;
 }
 
 // The license activation response.

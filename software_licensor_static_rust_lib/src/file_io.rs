@@ -494,6 +494,8 @@ mod tests {
                 message: "".to_string(), 
                 message_code: 8, 
                 post_expiration_error_code: 0, 
+                current_machine_count: None,
+                current_machine_limit: None,
             }
         );
         license_response.key_files.insert(
@@ -509,7 +511,9 @@ mod tests {
                 check_back_timestamp: 6000, 
                 message: "".to_string(), 
                 message_code: 8, 
-                post_expiration_error_code: 0 
+                post_expiration_error_code: 0,
+                current_machine_count: None,
+                current_machine_limit: None,
             }
         );
         license_response.key_files.insert(
@@ -525,7 +529,9 @@ mod tests {
                 check_back_timestamp: 5000, 
                 message: "".to_string(), 
                 message_code: 1, 
-                post_expiration_error_code: 0
+                post_expiration_error_code: 0,
+                current_machine_count: None,
+                current_machine_limit: None,
             }
         );
 
