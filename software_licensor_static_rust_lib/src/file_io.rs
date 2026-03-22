@@ -13,7 +13,7 @@ use sha2::Digest;
 use crate::error::{Error, LicensingError};
 use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseKeyFile};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
-use crate::{LicenseData, LicenseDataTrait};
+use crate::LicenseData;
 use crate::generated::software_licensor_client::LicenseData as LicenseDataProto;
 
 /// Gets the path to where the license file will be created.

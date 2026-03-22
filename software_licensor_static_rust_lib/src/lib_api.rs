@@ -1,4 +1,4 @@
-use crate::{LicenseDataTrait, file_io::check_key_file_async, generated::software_licensor_client::Stats, now, stats::Language};
+use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, now, stats::Language};
 use std::env::consts::{OS, ARCH};
 use crate::LicenseData;
 use std::collections::HashMap;
@@ -104,7 +104,10 @@ pub(crate) fn get_status_message_from_code(code: i32, language: &Language) -> St
 }
 
 impl LicenseStatus {
-    /// Initializes a new LicenseStatus with the given store ID
+    /// Initializes a new LicenseStatus with the given store ID.
+    /// 
+    /// Also runs `check_license()` during initialization to populate the 
+    /// license data, and returns an error message in the license data if there was an error during initialization.
     pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>) -> Self {
         let (was_err, license_data) = match get_or_init_license_file(&store_id, company_name.to_string()).await {
             Ok(v) => {
@@ -150,7 +153,7 @@ impl LicenseStatus {
     /// Gets the error message corresponding to the license status code, using 
     /// the appropriate language based on the machine's stats. This is a user-friendly
     /// error message that can be displayed to the user if the license is not valid.
-    fn get_error_message_from_error_code(&self, codes: i32) -> String {
+    pub fn get_error_message_from_error_code(&self, codes: i32) -> String {
         let language = super::stats::language();
         get_status_message_from_code(codes, &language)
     }
@@ -160,12 +163,11 @@ impl LicenseStatus {
     /// Returns Ok(true) if the license is valid and unlocked, or Ok(false) or 
     /// Err(String) with an error message if the license is not valid.
     #[inline(always)]
-    pub async fn check_license(&mut self, should_check_cloud: bool) -> Result<(bool, LicenseData), String> {
+    pub async fn check_license(&self, should_check_cloud: bool) -> Result<(bool, LicenseData), String> {
         let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone()).await {
             Ok(v) => (v, true),
             Err(e) => (LicenseData::error(&e.to_string()), false),
         };
-        self.license_data = Some(license_data.clone());
         if success {
             Ok((success, license_data))
         } else {
@@ -174,7 +176,7 @@ impl LicenseStatus {
     }
 
     /// Reads the reply from the webserver after attempting to activate the license.
-    pub async fn read_reply_from_webserver(&mut self, license_code: &str, save_system_stats: bool) -> Result<bool, String> {
+    pub async fn read_reply_from_webserver(&self, license_code: &str, save_system_stats: bool) -> Result<bool, String> {
         let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats).await {
             Ok(v) => v,
             Err(e) => return Err(e.to_string()),

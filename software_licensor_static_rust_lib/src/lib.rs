@@ -2,8 +2,13 @@
 #![allow(clippy::enum_variant_names)]
 
 use std::collections::HashMap;
-use std::os::raw::{c_char, c_int};
-use std::ffi::{CString, CStr};
+#[cfg(not(feature = "rlib"))]
+use std::{
+    ffi::{CString, CStr}, 
+    os::raw::{c_char, c_int}
+};
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 use std::time::Duration;
 
 use api::activate_license_request;
@@ -50,6 +55,7 @@ pub struct LicenseData {
 
 #[cfg(feature = "rlib")]
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LicenseData {
     pub result_code: i32,
     pub customer_first_name: String,
@@ -61,17 +67,10 @@ pub struct LicenseData {
     pub license_code: String,
 }
 
-pub(crate) trait LicenseDataTrait {
-    fn new(int_result: i32, first_name: &str, last_name: &str, email: &str, license_type: &str, version: &str, error_message: &str, license_code: &str) -> Self;
-    fn error(message: &str) -> Self;
-    fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: i32) -> Self;
-    fn licensing_error(licensing_error: &LicensingError) -> Self;
-}
-
-impl LicenseDataTrait for LicenseData {
+impl LicenseData {
     #[cfg(not(feature = "rlib"))]
     fn new(
-        int_result: c_int, 
+        int_result: i32, 
         first_name: &str, 
         last_name: &str, 
         email: &str, 
@@ -81,7 +80,7 @@ impl LicenseDataTrait for LicenseData {
         license_code: &str
     ) -> Self {
         Self {
-            result_code: int_result,
+            result_code: int_result as c_int,
             customer_first_name: CString::new(first_name).expect("CString::new failed").into_raw(),
             customer_last_name: CString::new(last_name).expect("CString::new failed").into_raw(),
             customer_email: CString::new(email).expect("CString::new failed").into_raw(),
@@ -116,7 +115,7 @@ impl LicenseDataTrait for LicenseData {
             "Error"
         )
     }
-    fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: c_int) -> Self {
+    fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: i32) -> Self {
         Self::new(
             status_code, 
             &license_response.customer_first_name, 
@@ -130,7 +129,7 @@ impl LicenseDataTrait for LicenseData {
     }
     fn licensing_error(licensing_error: &LicensingError) -> Self {
         let (error_code, license_code) = licensing_error.get_error_and_license_codes();
-        Self::new(error_code as c_int, "", "", "", "", "", "", &license_code)
+        Self::new(error_code as i32, "", "", "", "", "", "", &license_code)
     }
 }
 
