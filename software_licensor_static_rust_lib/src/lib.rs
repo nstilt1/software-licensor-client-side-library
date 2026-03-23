@@ -21,6 +21,7 @@ mod generated;
 mod error;
 mod file_io;
 mod macros;
+mod status_messages;
 
 #[inline(always)]
 pub(crate) fn now() -> u64 {
@@ -31,7 +32,6 @@ pub(crate) fn now() -> u64 {
 pub mod lib_api;
 #[cfg(feature = "rlib")]
 pub use lib_api::*;
-#[cfg(feature = "rlib")]
 pub(crate) mod stats;
 
 use error::{Error, LicensingError};
@@ -112,7 +112,8 @@ impl LicenseData {
             machine_limit,
         }
     }
-    fn error(message: &str, license_code: &str) -> Self {
+    #[deprecated(note = "This function is deprecated because it doesn't parse the error")]
+    fn error_old(message: &str, license_code: &str) -> Self {
         Self::new(
             -1, 
             "Error", 
@@ -126,6 +127,37 @@ impl LicenseData {
             None
         )
     }
+    fn error(error: Error, license_code: &str) -> Self {
+        let error_message = error.to_string();
+        let (license_code, error_code) = error.get_license_code_and_error_code();
+        let error_message = status_messages::get_status_message_from_code(error_code as i32);
+        Self::new(
+            error_code as i32,
+            "Error",
+            "Error",
+            "Error",
+            "Error",
+            "0",
+            &error_message,
+            license_code,
+            None,
+            None
+        )
+    }
+    fn general_error(error_message: &str) -> Self {
+        Self::new(
+            -1,
+            "Error",
+            "Error",
+            "Error",
+            "Error",
+            "Error",
+            error_message,
+            "Error",
+            None,
+            None,
+        )
+    }
     fn from_key_file_and_license_response(key_file: &LicenseKeyFile, license_response: &LicenseActivationResponse, status_code: i32) -> Self {
         Self::new(
             status_code, 
@@ -135,7 +167,7 @@ impl LicenseData {
             &key_file.license_type, 
             &key_file.product_version,
             #[cfg(feature = "rlib")]
-            &lib_api::get_status_message_from_code(status_code),
+            &status_messages::get_status_message_from_code(status_code),
             #[cfg(not(feature = "rlib"))] 
             "",
             &key_file.license_code,
@@ -314,7 +346,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     for s in array_size.iter() {
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
-            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys", ""))
+            Err(_) => return box_out!(LicenseData::general_error("UTF-8 error when decoding product IDs and pubkeys"))
         }
     }
 
@@ -322,7 +354,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1", ""));
+            return box_out!(LicenseData::general_error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"));
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
@@ -332,7 +364,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     rt.block_on(async {
         let mut license_file = match get_or_init_license_file(company_name_str, store_id_str.to_string()).await {
             Ok(v) => v,
-            Err(e) => return box_out!(LicenseData::error(&e.to_string(), ""))
+            Err(e) => return box_out!(LicenseData::general_error(&e.to_string()))
         };
         sleep(Duration::from_secs(5)).await;
         match activate_license_request(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap.keys().collect::<Vec<&String>>(), machine_id_str, license_code_str, &mut license_file).await {
@@ -340,7 +372,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Err(v) => {
                 match v {
                     Error::LicensingError(e) => return box_out!(LicenseData::licensing_error(&e)),
-                    _ => return box_out!(LicenseData::error(&v.to_string(), ""))
+                    _ => return box_out!(LicenseData::general_error(&v.to_string()))
                 }
             }
         };
@@ -349,7 +381,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Err(e) => {
                 match e {
                     Error::LicensingError(error) => return box_out!(LicenseData::licensing_error(&error)),
-                    _ => return box_out!(LicenseData::error(&e.to_string(), ""))
+                    _ => return box_out!(LicenseData::general_error(&e.to_string()))
                 }
             }
         }
@@ -386,7 +418,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
             Err(_) => {
-                return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys", ""))
+                return box_out!(LicenseData::general_error("UTF-8 error when decoding product IDs and pubkeys"))
             }
         }
     }
@@ -395,7 +427,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1", ""))
+            return box_out!(LicenseData::general_error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"))
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
@@ -414,7 +446,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
                         box_out!(r)
                     },
                     _ => {
-                        let r = LicenseData::error(e.to_string().as_str(), "");
+                        let r = LicenseData::general_error(e.to_string().as_str());
                         box_out!(r)
                     }
                 }
@@ -443,7 +475,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     for s in array_size.iter() {
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
-            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys", ""))
+            Err(_) => return box_out!(LicenseData::general_error("UTF-8 error when decoding product IDs and pubkeys"))
         }
     }
 
@@ -451,7 +483,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1", ""))
+            return box_out!(LicenseData::general_error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"))
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
@@ -463,18 +495,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
             Ok(v) => {
                 return box_out!(v)
             },
-            Err(e) => {
-                match e {
-                    Error::LicensingError(v) => {
-                        let r = LicenseData::licensing_error(&v);
-                        return box_out!(r)
-                    },
-                    _ => {
-                        let r = LicenseData::error(e.to_string().as_str(), "");
-                        return box_out!(r)
-                    }
-                }
-            }
+            Err(e) => box_out!(LicenseData::error(e, ""))
         }
     })
 }

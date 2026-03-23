@@ -6,7 +6,7 @@ macro_rules! runtime {
         match Runtime::new() {
             Ok(v) => v,
             Err(_) => {
-                return box_out!(LicenseData::error("There was an error starting a runtime", ""))
+                return box_out!(LicenseData::general_error("There was an error starting a runtime"))
             }
         }
     };
@@ -44,7 +44,7 @@ macro_rules! parse_c_char {
         match unsafe { CStr::from_ptr($c_char_arg) }.to_str() {
             Ok(v) => v,
             Err(_) => {
-                return box_out!(LicenseData::error($error_message, ""))
+                return box_out!(LicenseData::general_error($error_message))
             }
         }
     };

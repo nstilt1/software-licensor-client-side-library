@@ -1,6 +1,5 @@
 use std::time::SystemTimeError;
-#[cfg(feature = "rlib")]
-use crate::lib_api::get_status_message_from_code;
+use crate::status_messages::get_status_message_from_code;
 
 /// Implements some error types that correspond to error codes.
 macro_rules! impl_error_codes {
@@ -74,30 +73,32 @@ pub enum Error {
     /// other reasons.
     ReqwestError(reqwest::Error),
     SystemTimeError,
+    RuntimeError,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ApiError(s) => f.write_str(s),
-            #[cfg(feature = "rlib")]
             Self::LicensingError(v) => f.write_str(&get_status_message_from_code(v.get_error_and_license_codes().0 as i32)),
-            #[cfg(not(feature = "rlib"))]
-            Self::LicensingError(v) => f.write_str(&v.get_error_and_license_codes().0.to_string()),
             Self::CryptoError(s) => f.write_str(s),
             Self::OptionError(s) => f.write_str(s),
             Self::IoError => f.write_str("There was an IO error"),
             Self::ReqwestError(e) => f.write_str(&e.to_string()),
             Self::SystemTimeError => f.write_str("There was an error getting the current time"),
+            Self::RuntimeError => f.write_str("There was an error starting the runtime"),
         }
     }
 }
 
 impl Error {
-    pub(crate) fn get_license_code(&self) -> Option<&str> {
+    pub(crate) fn get_license_code_and_error_code(&self) -> (&str, u32) {
         match self {
-            Self::LicensingError(e) => Some(e.get_error_and_license_codes().1),
-            _ => None,
+            Self::LicensingError(e) => {
+                let (error_code, license_code) = e.get_error_and_license_codes();
+                (license_code, error_code)
+            },
+            _ => ("", 0),
         }
     }
 }
