@@ -164,8 +164,8 @@ impl LicenseStatus {
             product_ids_and_pubkeys,
         };
         let license_data = match result.check_license(true).await {
-            Ok((is_unlocked, license_data)) => license_data,
-            Err(e) => LicenseData::error(&e),
+            Ok((is_unlocked, license_data, license_code)) => license_data,
+            Err(e) => LicenseData::error(&e.0, &e.1),
         };
         (result, license_data)
     }
@@ -184,18 +184,18 @@ impl LicenseStatus {
     /// Checks the license, potentially making an API request to the webserver 
     /// if the bool is true and if necessary.
     /// 
-    /// Returns Ok(true) if the license is valid and unlocked, or Ok(false) or 
-    /// Err(String) with an error message if the license is not valid.
+    /// Returns Ok(true, licenseData, licenseCode) if the license is valid and unlocked, or Ok(false) or 
+    /// Err((error_message, license_code)) with an error message if the license is not valid.
     #[inline(always)]
-    pub async fn check_license(&self, should_check_cloud: bool) -> Result<(bool, LicenseData), String> {
+    pub async fn check_license(&self, should_check_cloud: bool) -> Result<(bool, LicenseData, String), (String, String)> {
         let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone()).await {
             Ok(v) => (v, true),
-            Err(e) => (LicenseData::error(&e.to_string()), false),
+            Err(e) => (LicenseData::error(&e.to_string(), ""), false),
         };
         if success {
-            Ok((success, license_data))
+            Ok((success, license_data.clone(), license_data.license_code.clone()))
         } else {
-            Err(license_data.error_message)
+            Err((license_data.error_message, license_data.license_code))
         }
     }
 

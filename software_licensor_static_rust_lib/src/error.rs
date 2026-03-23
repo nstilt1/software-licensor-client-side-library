@@ -93,6 +93,15 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl Error {
+    pub(crate) fn get_license_code(&self) -> Option<&str> {
+        match self {
+            Self::LicensingError(e) => Some(e.get_error_and_license_codes().1),
+            _ => None,
+        }
+    }
+}
+
 pub trait OptionErrors<T: Sized> {
     fn unwrap_or_err(&self, error_message: &str) -> Result<&T, Error>;
 }

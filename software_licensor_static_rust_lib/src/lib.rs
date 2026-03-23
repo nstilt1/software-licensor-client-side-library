@@ -112,7 +112,7 @@ impl LicenseData {
             machine_limit,
         }
     }
-    fn error(message: &str) -> Self {
+    fn error(message: &str, license_code: &str) -> Self {
         Self::new(
             -1, 
             "Error", 
@@ -314,7 +314,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     for s in array_size.iter() {
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
-            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys"))
+            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys", ""))
         }
     }
 
@@ -322,7 +322,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"));
+            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1", ""));
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
@@ -332,7 +332,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     rt.block_on(async {
         let mut license_file = match get_or_init_license_file(company_name_str, store_id_str.to_string()).await {
             Ok(v) => v,
-            Err(e) => return box_out!(LicenseData::error(&e.to_string()))
+            Err(e) => return box_out!(LicenseData::error(&e.to_string(), ""))
         };
         sleep(Duration::from_secs(5)).await;
         match activate_license_request(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap.keys().collect::<Vec<&String>>(), machine_id_str, license_code_str, &mut license_file).await {
@@ -340,7 +340,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Err(v) => {
                 match v {
                     Error::LicensingError(e) => return box_out!(LicenseData::licensing_error(&e)),
-                    _ => return box_out!(LicenseData::error(&v.to_string()))
+                    _ => return box_out!(LicenseData::error(&v.to_string(), ""))
                 }
             }
         };
@@ -349,7 +349,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
             Err(e) => {
                 match e {
                     Error::LicensingError(error) => return box_out!(LicenseData::licensing_error(&error)),
-                    _ => return box_out!(LicenseData::error(&e.to_string()))
+                    _ => return box_out!(LicenseData::error(&e.to_string(), ""))
                 }
             }
         }
@@ -386,7 +386,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
             Err(_) => {
-                return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys"))
+                return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys", ""))
             }
         }
     }
@@ -395,7 +395,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"))
+            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1", ""))
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
@@ -414,7 +414,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
                         box_out!(r)
                     },
                     _ => {
-                        let r = LicenseData::error(e.to_string().as_str());
+                        let r = LicenseData::error(e.to_string().as_str(), "");
                         box_out!(r)
                     }
                 }
@@ -443,7 +443,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     for s in array_size.iter() {
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
-            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys"))
+            Err(_) => return box_out!(LicenseData::error("UTF-8 error when decoding product IDs and pubkeys", ""))
         }
     }
 
@@ -451,7 +451,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
-            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"))
+            return box_out!(LicenseData::error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1", ""))
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
     }
@@ -470,7 +470,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
                         return box_out!(r)
                     },
                     _ => {
-                        let r = LicenseData::error(e.to_string().as_str());
+                        let r = LicenseData::error(e.to_string().as_str(), "");
                         return box_out!(r)
                     }
                 }
