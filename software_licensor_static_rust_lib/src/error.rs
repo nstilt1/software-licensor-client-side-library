@@ -81,7 +81,7 @@ impl std::fmt::Display for Error {
         match self {
             Self::ApiError(s) => f.write_str(s),
             #[cfg(feature = "rlib")]
-            Self::LicensingError(v) => f.write_str(&get_status_message_from_code(v.get_error_and_license_codes().0 as i32, &super::stats::language())),
+            Self::LicensingError(v) => f.write_str(&get_status_message_from_code(v.get_error_and_license_codes().0 as i32)),
             #[cfg(not(feature = "rlib"))]
             Self::LicensingError(v) => f.write_str(&v.get_error_and_license_codes().0.to_string()),
             Self::CryptoError(s) => f.write_str(s),

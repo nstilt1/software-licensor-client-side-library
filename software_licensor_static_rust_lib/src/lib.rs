@@ -30,6 +30,8 @@ pub(crate) fn now() -> u64 {
 #[cfg(feature = "rlib")]
 pub mod lib_api;
 #[cfg(feature = "rlib")]
+pub use lib_api::*;
+#[cfg(feature = "rlib")]
 pub(crate) mod stats;
 
 use error::{Error, LicensingError};
@@ -131,7 +133,10 @@ impl LicenseData {
             &license_response.customer_last_name, 
             &license_response.customer_email, 
             &key_file.license_type, 
-            &key_file.product_version, 
+            &key_file.product_version,
+            #[cfg(feature = "rlib")]
+            &lib_api::get_status_message_from_code(status_code),
+            #[cfg(not(feature = "rlib"))] 
             "",
             &key_file.license_code,
             key_file.current_machine_count,
