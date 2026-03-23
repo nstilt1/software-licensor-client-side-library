@@ -157,14 +157,17 @@ impl LicenseStatus {
     /// 
     /// Also runs `check_license()` during initialization to populate the 
     /// license data, and returns an error message in the license data if there was an error during initialization.
-    pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>) -> Self {
+    pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>) -> (Self, LicenseData) {
         let result = Self {
             store_id: store_id.to_string(),
             company_name: company_name.to_string(),
             product_ids_and_pubkeys,
         };
-        result.check_license(true).await.ok();
-        result
+        let license_data = match result.check_license(true).await {
+            Ok((is_unlocked, license_data)) => license_data,
+            Err(e) => LicenseData::error(&e),
+        };
+        (result, license_data)
     }
     /// Checks if the license is unlocked without making an API request. This 
     /// is a quick check that can be used to determine if the license is unlocked.
