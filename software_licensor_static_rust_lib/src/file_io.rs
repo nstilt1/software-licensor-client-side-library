@@ -425,7 +425,7 @@ pub(crate) async fn check_key_file_async(
         Ok(v) => v,
         Err(licensing_error) => {
             log_error!("Failed to get latest key file: {:?}", licensing_error.get_error_and_license_codes());
-            return Err(licensing_error.into())
+            return Err(Error::LicensingError(licensing_error))
         }
     };
     if key_file.message_code != 1 {

@@ -1,4 +1,4 @@
-use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, stats::Language, status_messages::get_status_message_from_code};
+use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, log_info, stats::Language, status_messages::get_status_message_from_code};
 use std::env::consts::{OS, ARCH};
 use crate::LicenseData;
 use std::collections::HashMap;
@@ -63,8 +63,6 @@ impl LicenseStatus {
             use crate::inner::init_logger;
 
             if let Ok(log_path) = init_logger() {
-                use crate::log_info;
-
                 log_info!("file logging initialized at LicenseStatus::new(): {}", log_path.display());
             } else {
                 use crate::log_error;
@@ -87,6 +85,7 @@ impl LicenseStatus {
     /// is a quick check that can be used to determine if the license is unlocked.
     #[inline(always)]
     pub async fn is_unlocked(&self) -> bool {
+        log_info!("Running is_unlocked check");
         check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id.clone()).await.is_ok()
     }
     /// Gets the error message corresponding to the license status code, using 
@@ -102,9 +101,16 @@ impl LicenseStatus {
     /// Err((error_message, license_code)) with an error message if the license is not valid.
     #[inline(always)]
     pub async fn check_license(&self, should_check_cloud: bool) -> Result<(bool, LicenseData, String), (bool, LicenseData)> {
+        log_info!("Running check_license(should_check_cloud = {})", should_check_cloud);
         let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone()).await {
             Ok(v) => (v, true),
-            Err(e) => (LicenseData::error(e, ""), false),
+            Err(e) => {
+                let license_data = match e {
+                    crate::Error::LicensingError(e) => LicenseData::licensing_error(&e),
+                    _ => LicenseData::error(e, "")
+                };
+                (license_data, false)
+            },
         };
         if success {
             Ok((success, license_data.clone(), license_data.license_code.clone()))
