@@ -1,4 +1,4 @@
-use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, stats::Language};
+use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, stats::Language, status_messages::get_status_message_from_code};
 use std::env::consts::{OS, ARCH};
 use crate::LicenseData;
 use std::collections::HashMap;
@@ -46,6 +46,12 @@ impl PartialOrd for SemanticVersion {
     }
 }
 
+pub struct LicenseStatus {
+    pub store_id: String,
+    pub company_name: String,
+    pub product_ids_and_pubkeys: HashMap<String, String>,
+}
+
 impl LicenseStatus {
     /// Initializes a new LicenseStatus with the given store ID.
     /// 
@@ -57,8 +63,12 @@ impl LicenseStatus {
             use crate::inner::init_logger;
 
             if let Ok(log_path) = init_logger() {
+                use crate::log_info;
+
                 log_info!("file logging initialized at LicenseStatus::new(): {}", log_path.display());
             } else {
+                use crate::log_error;
+
                 log_error!("failed to initialize file logging at LicenseStatus::new()");
             }
         }
