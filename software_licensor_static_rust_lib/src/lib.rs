@@ -11,6 +11,9 @@ use std::{
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
 
+mod logging;
+pub(crate) use logging::*;
+
 use api::activate_license_request;
 use file_io::{check_key_file_async, get_or_init_hw_info_file, get_or_init_license_file, save_hw_info_file};
 use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyFile, Stats};
@@ -227,6 +230,16 @@ pub extern "C" fn update_machine_info(
     has_avx512vpopcntdq: bool,
     has_neon: bool,
 ) {
+    #[cfg(feature = "logging")]
+    {
+        use crate::inner::init_logger;
+
+        if let Ok(log_path) = init_logger() {
+            log_info!("file logging initialized at update_machine_info: {}", log_path.display());
+        } else {
+            log_error!("failed to initialize file logging at update_machine_info");
+        }
+    }
     let os_name_str = parse_c_char!(os_name);
     let computer_name_str = parse_c_char!(computer_name);
     let users_language_str = parse_c_char!(users_language);
@@ -335,6 +348,17 @@ pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, license_code: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+    #[cfg(feature = "logging")]
+    {
+        use crate::inner::init_logger;
+
+        if let Ok(log_path) = init_logger() {
+            log_info!("file logging initialized at read_reply_from_webserver: {}", log_path.display());
+        } else {
+            log_error!("failed to initialize file logging at read_reply_from_webserver");
+        }
+    }
+    log_info!("read_reply_from_webserver");
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
@@ -346,7 +370,10 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     for s in array_size.iter() {
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
-            Err(_) => return box_out!(LicenseData::general_error("UTF-8 error when decoding product IDs and pubkeys"))
+            Err(_) => {
+                log_error!("UTF-8 error when decoding product IDs and pubkeys");
+                return box_out!(LicenseData::general_error("UTF-8 error when decoding product IDs and pubkeys"))
+            }
         }
     }
 
@@ -354,6 +381,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
+            log_error!("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1: {}", product_id_and_key);
             return box_out!(LicenseData::general_error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"));
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
@@ -364,12 +392,16 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     rt.block_on(async {
         let mut license_file = match get_or_init_license_file(company_name_str, store_id_str.to_string()).await {
             Ok(v) => v,
-            Err(e) => return box_out!(LicenseData::general_error(&e.to_string()))
+            Err(e) => {
+                log_error!("Failed to get or initialize license file: {}", e);
+                return box_out!(LicenseData::general_error(&e.to_string()))
+            }
         };
         sleep(Duration::from_secs(5)).await;
         match activate_license_request(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap.keys().collect::<Vec<&String>>(), machine_id_str, license_code_str, &mut license_file).await {
             Ok(()) => (),
             Err(v) => {
+                log_error!("There was an error when activating the license: {}", v);
                 match v {
                     Error::LicensingError(e) => return box_out!(LicenseData::licensing_error(&e)),
                     _ => return box_out!(LicenseData::general_error(&v.to_string()))
@@ -379,6 +411,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
         match check_key_file_async(Some(&mut license_file), store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string()).await {
             Ok(v) => return box_out!(v),
             Err(e) => {
+                log_error!("There was an error when checking the license after activation: {}", e);
                 match e {
                     Error::LicensingError(error) => return box_out!(LicenseData::licensing_error(&error)),
                     _ => return box_out!(LicenseData::general_error(&e.to_string()))
@@ -407,6 +440,16 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+    #[cfg(feature = "logging")]
+    {
+        use crate::inner::init_logger;
+
+        if let Ok(log_path) = init_logger(){
+            log_info!("file logging initialized at check_license: {}", log_path.display());
+        } else {
+            log_error!("failed to initialize file logging at check_license");
+        }
+    }
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
@@ -418,6 +461,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
         match unsafe { CStr::from_ptr(*s).to_str() } {
             Ok(v) => product_ids_and_pubkeys_vec.push(v),
             Err(_) => {
+                log_error!("UTF-8 error when decoding product IDs and pubkeys");
                 return box_out!(LicenseData::general_error("UTF-8 error when decoding product IDs and pubkeys"))
             }
         }
@@ -427,6 +471,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     for product_id_and_key in product_ids_and_pubkeys_vec.iter() {
         let split = product_id_and_key.split(';').collect::<Vec<&str>>();
         if split.len() != 2 {
+            log_error!("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1: {}", product_id_and_key);
             return box_out!(LicenseData::general_error("product_ids_and_pubkeys contained a string with an amount of semicolons not equal to 1"))
         }
         product_ids_and_pubkeys_hashmap.insert(split[0].to_string(), split[1].to_string());
@@ -440,6 +485,8 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
                 box_out!(v)
             },
             Err(e) => {
+                log_error!("There was an error when checking the license: {}", e);
+                log_error!("Error message for code: {}", status_messages::get_status_message_from_code(e.get_license_code_and_error_code().1 as i32));
                 match e {
                     Error::LicensingError(v) => {
                         let r = LicenseData::licensing_error(&v);
@@ -465,6 +512,16 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn check_license_no_api_request(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+    #[cfg(feature = "logging")]
+    {
+        use crate::inner::init_logger;
+
+        if let Ok(log_path) = init_logger() {
+            log_info!("file logging initialized at check_license_no_api_request: {}", log_path.display());
+        } else {
+            log_error!("Failed to initialize file logging in check_license_no_api_request");
+        }
+    }
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);

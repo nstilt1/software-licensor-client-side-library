@@ -13,7 +13,7 @@ use sha2::Digest;
 use crate::error::{Error, LicensingError};
 use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseKeyFile};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
-use crate::LicenseData;
+use crate::{LicenseData, log_error, log_info};
 use crate::generated::software_licensor_client::LicenseData as LicenseDataProto;
 
 /// Gets the path to where the license file will be created.
@@ -66,11 +66,36 @@ fn get_machine_stats_path() -> Result<PathBuf, Error> {
     Ok(Path::new(&dir_path).to_owned())
 }
 
+/// Gets the path to where the log file will be created.
+pub(crate) fn get_log_file_path() -> Result<PathBuf, Error> {
+    #[cfg(target_os = "windows")]
+    return Ok(Path::new(&format!("C:\\ProgramData\\HyperformanceSolutions")).to_owned());
+    #[cfg(target_os = "macos")]
+    let dir_path = {
+        if let Some(proj_dirs) = ProjectDirs::from("com", "Hyperformance Solutions", "Software Licensor") {
+            return Ok(proj_dirs.data_dir().to_path_buf())
+        } else {
+            return Ok(Path::new("").into())
+        }
+    };
+    #[cfg(target_os = "linux")]
+    return Ok(Path::new(format!("{}/.local/share/HyperformanceSolutions", std::env::var("HOME")?)));
+    #[cfg(target_os = "android")]
+    return Ok(Path::new(format!("/data/data/HyperformanceSolutions/files")));
+    
+    // instead of panicking in this function, this will return a path that will
+    // probably cause an error
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android")))]
+    return Ok(Path::new(format!("/HyperformanceSolutions")));
+}
+
 pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key: String) -> Result<ClientSideDataStorage, Error> {
+    log_info!("Getting or initializing license file");
     let path = get_license_file_path(company_name_str)?;
     api_key.truncate(20);
     
     if path.exists() {
+        log_info!("License file exists, trying to read it");
         let mut file = File::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -86,10 +111,12 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
                         license_code: "".to_string(),
                     });
                 }
+                log_info!("Successfully decoded license file");
                 save_license_file(&data_storage, company_name_str)?;
                 Ok(data_storage)
             },
             Err(_) => {
+                log_info!("Failed to decode license file, initializing a new one");
                 // need to initialize the file
                 let mut license_data = HashMap::new();
                 license_data.insert(api_key, LicenseDataProto {
@@ -107,6 +134,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
             }
         }
     } else {
+        log_info!("License file does not exist, initializing a new one");
         // path does not exist
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -118,22 +146,28 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
         };
         get_pubkeys(&mut data_storage, true).await?;
         save_license_file(&data_storage, company_name_str)?;
+        log_info!("Successfully initialized license file");
         Ok(data_storage)
     }
 }
 
 pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage, Error> {
+    log_info!("Getting or initializing hw info file");
     let path = get_machine_stats_path()?;
 
     if path.exists() {
+        log_info!("hw info file exists, trying to read it");
         let mut file = File::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         match ClientSideHwInfoStorage::decode_length_delimited(buffer.as_slice()) {
             Ok(stats) => {
+                log_info!("Successfully decoded hw info file");
+
                 Ok(stats)
             },
             Err(_) => {
+                log_info!("Failed to decode hw info file, initializing a new one");
                 let hw_info_storage = ClientSideHwInfoStorage {
                     machine_stats: None,
                 };
@@ -141,6 +175,7 @@ pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage
             }
         }
     } else {
+        log_info!("hw info file does not exist, initializing a new one");
         let hw_info_storage = ClientSideHwInfoStorage {
             machine_stats: None,
         };
@@ -150,9 +185,12 @@ pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage
 
 /// Saves the license file to the path (if the permissions are correct).
 pub(crate) fn save_license_file(data_storage: &ClientSideDataStorage, company_name_str: &str) -> Result<(), Error> {
+    log_info!("Saving license file");
     let path = get_license_file_path(company_name_str)?;
+    log_info!("License path: {}", path.to_str().unwrap_or("Path is not valid unicode"));
     
     if !path.exists() {
+        log_info!("License file does not exist, creating a new one");
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -160,6 +198,7 @@ pub(crate) fn save_license_file(data_storage: &ClientSideDataStorage, company_na
         let mut file = File::create_new(path)?;
         file.write_all(data_storage.encode_length_delimited_to_vec().as_slice())?;
     } else {
+        log_info!("License file exists, overwriting it");
         let mut file = OpenOptions::new()
             .write(true)
             .append(false)
@@ -167,21 +206,26 @@ pub(crate) fn save_license_file(data_storage: &ClientSideDataStorage, company_na
             .open(path)?;
         file.write_all(data_storage.encode_length_delimited_to_vec().as_slice())?;
     }
+    log_info!("Successfully saved license file");
     Ok(())
 }
 
 pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Error> {
+    log_info!("Saving hw info file");
     let path = get_machine_stats_path()?;
+    log_info!("Saving hw info file to: {}", path.to_str().unwrap_or("Path is not valid unicode"));
 
     let contents = data.encode_length_delimited_to_vec();
 
     if !path.exists() {
+        log_info!("hw info file does not exist, creating a new one");
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let mut file = File::create_new(path)?;
         file.write_all(&contents)?;
     } else {
+        log_info!("hw info file exists, overwriting it");
         let mut file = OpenOptions::new()
             .write(true)
             .append(false)
@@ -189,6 +233,7 @@ pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Er
             .open(path)?;
         file.write_all(&contents)?;
     }
+    log_info!("Successfully saved hw info file");
     Ok(())
 }
 
@@ -202,6 +247,7 @@ pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Er
 /// This function can only result in an `Error::LicensingError`, so the error number can be returned to the external code.
 #[inline(always)]
 pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_ids: &Vec<&String>, mut api_key: String) -> Result<(LicenseKeyFile, Signature, LicenseActivationResponse), LicensingError> {
+    log_info!("Getting latest key file for product ids: {:?}", product_ids);
     api_key.truncate(20);
     let license_data = match data_storage.license_data.get(&api_key) {
         Some(v) => v,
@@ -285,6 +331,7 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
 /// on them.
 #[inline(always)]
 pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, mut api_key: String) {
+    log_info!("Removing key files for product ids: {:?}", product_ids);
     api_key.truncate(20);
     let license_data = match license_file.license_data.get_mut(&api_key) {
         Some(v) => v,
@@ -346,35 +393,57 @@ pub(crate) async fn check_key_file_async(
 ) -> Result<LicenseData, Error> {
     let mut license_file = match license_file {
         Some(file) => file,
-        None => &mut get_or_init_license_file(company_name_str, api_key.clone()).await?
+        None => {
+            &mut match get_or_init_license_file(company_name_str, api_key.clone()).await {
+                Ok(v) => v,
+                Err(e) => {
+                    log_error!("Failed to get or initialize license file: {}", e);
+                    return Err(Error::IoError)
+                }
+            }
+        }
     };
     let mut trimmed_api_key = api_key.clone();
     trimmed_api_key.truncate(20);
     let license_data = match license_file.license_data.get_mut(&trimmed_api_key) {
         Some(v) => v,
-        None => return Err(Error::LicensingError((2, "".to_string()).into()))
+        None => {
+            log_error!("API key not found in license file. API Key: {}", trimmed_api_key);
+            log_error!("License data keys: {:?}", license_file.license_data.keys());
+            return Err(Error::LicensingError((2, "".to_string()).into()))
+        }
     };
     let license_code: String = match license_data.license_code.len() < 16 {
-        true => return Err(Error::LicensingError((2, license_data.license_code.clone()).into())),
+        true => {
+            log_error!("License code in license file is less than 16 chars: {}", license_data.license_code);
+            return Err(Error::LicensingError((2, license_data.license_code.clone()).into()))
+        },
         false => license_data.license_code.clone()
     }.to_owned();
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
     let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
         Ok(v) => v,
-        Err(licensing_error) => return Err(licensing_error.into())
+        Err(licensing_error) => {
+            log_error!("Failed to get latest key file: {:?}", licensing_error.get_error_and_license_codes());
+            return Err(licensing_error.into())
+        }
     };
     if key_file.message_code != 1 {
+        log_error!("key_file.message code != 1: {}", key_file.message_code);
         return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32));
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     if key_file.expiration_timestamp < now {
+        log_error!("key file expired at {}, now is {}", key_file.expiration_timestamp, now);
         if !should_send_request {
             return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32));
         }
         // send request to check for an update
+        log_info!("Sending request to check for an update since the key file is expired");
         match activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
             Ok(_) => (),
-            Err(_) => {
+            Err(e) => {
+                log_error!("Failed to activate license: {}", e);
                 return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
             }
         }
@@ -383,9 +452,11 @@ pub(crate) async fn check_key_file_async(
             Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
         };
         if key_file.message_code != 1 && key_file.message_code < 512 {
+            log_error!("After sending request, key_file.message code is still not 1: {}", key_file.message_code);
             return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, LicensingError::from((key_file.message_code as u32, license_code.clone())), api_key))
         }
         if key_file.message_code >= 512 {
+            log_error!("Error code is >= 512: {}", key_file.message_code);
             return Err(
                 handle_licensing_error(
                     &mut license_file, 
@@ -399,6 +470,7 @@ pub(crate) async fn check_key_file_async(
                 ))
         }
         if key_file.expiration_timestamp < now {
+            log_error!("Key file expired at {}, now is {}", key_file.expiration_timestamp, now);
             let err = if key_file.post_expiration_error_code == 16 {
                 LicensingError::LicenseNoLongerActive(license_code)
             } else {
@@ -409,6 +481,7 @@ pub(crate) async fn check_key_file_async(
     }
     if key_file.check_back_timestamp < now && should_send_request {
         // send request
+        log_info!("Key file check back timestamp is {}, now is {}, sending request to check for an update", key_file.check_back_timestamp, now);
         if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
             (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
                 Ok(v) => v,
@@ -418,6 +491,8 @@ pub(crate) async fn check_key_file_async(
     }
 
     if machine_id.ne(&key_file.machine_id) {
+        log_error!("Machine ID does not match key file machine ID");
+
         remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
         return Err(LicensingError::NoLicenseFound(license_code).into())
     }
@@ -425,17 +500,24 @@ pub(crate) async fn check_key_file_async(
     // verify signature on the key file
     let pubkey_b64 = match product_ids_and_pubkeys.get(&key_file.product_id) {
         Some(v) => v,
-        None => return Err(LicensingError::NoLicenseFound(license_code).into())
+        None => {
+            log_error!("Product ID not found in public keys");
+            return Err(LicensingError::NoLicenseFound(license_code).into())
+        }
     };
     let decoded_pubkey = match BASE64_STANDARD.decode(pubkey_b64) {
         Ok(v) => v,
-        Err(_) => return Err(LicensingError::NoLicenseFound(license_code).into())
+        Err(e) => {
+            log_error!("Failed to decode public key: {}", e);
+            return Err(LicensingError::NoLicenseFound(license_code).into())
+        }
     };
 
     let bytes = key_file.encode_length_delimited_to_vec();
     let verifying_key = match VerifyingKey::from_sec1_bytes(&decoded_pubkey) {
         Ok(v) => v,
-        Err(_) => {
+        Err(e) => {
+            log_error!("Failed to parse verifying key from developer supplied public key: {}", e);
             remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
             return Err(LicensingError::NoLicenseFound(license_code).into())
         }
@@ -443,6 +525,7 @@ pub(crate) async fn check_key_file_async(
     match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(bytes), &signature) {
         Ok(_) => Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32)),
         Err(_) => {
+            log_error!("Failed to verify signature on key file");
             remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
             Err(LicensingError::NoLicenseFound(license_code).into())
         }

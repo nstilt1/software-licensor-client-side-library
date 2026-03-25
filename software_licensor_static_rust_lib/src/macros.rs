@@ -44,6 +44,7 @@ macro_rules! parse_c_char {
         match unsafe { CStr::from_ptr($c_char_arg) }.to_str() {
             Ok(v) => v,
             Err(_) => {
+                log_error!("UTF-8 error when decoding a c_char argument: {}", $error_message);
                 return box_out!(LicenseData::general_error($error_message))
             }
         }
@@ -52,6 +53,7 @@ macro_rules! parse_c_char {
         match unsafe { CStr::from_ptr($c_char_arg) }.to_str() {
             Ok(v) => v,
             Err(_) => {
+                log_error!("UTF-8 error when decoding a c_char argument: {}", $error_message);
                 call_callback_struct!($error_message, $callback);
                 return;
             }
@@ -60,7 +62,10 @@ macro_rules! parse_c_char {
     ($c_char_arg:expr) => {
         match unsafe { CStr::from_ptr($c_char_arg) }.to_str() {
             Ok(v) => v,
-            Err(_) => return
+            Err(_) => {
+                log_error!("UTF-8 error when decoding a c_char argument");
+                return
+            }
         }
     };
 }

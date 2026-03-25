@@ -11,10 +11,11 @@ use sha2::{Digest, Sha384};
 
 pub(crate) type EcdsaDigest = Sha384;
 
-use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hw_info_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, decrypt_info::ClientEcdhPubkey}, now};
+use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hw_info_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, decrypt_info::ClientEcdhPubkey}, log_error, log_info, now};
 
 /// Gets the Software Licensor Public Keys.
 pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
+    log_info!("Getting public keys from repo");
     let client = Client::new();
     let keys = client
         .get(PUBLIC_KEY_REPO_URL)
@@ -22,10 +23,14 @@ pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ec
         .await?;
     let pubkey_repo = match PubkeyRepo::decode_length_delimited(keys.bytes().await?) {
         Ok(v) => v,
-        Err(_) => return Err(Error::ApiError("Pubkey repo was not decodable".to_string()))
+        Err(_) => {
+            log_error!("Failed to decode pubkey repo");
+            return Err(Error::ApiError("Pubkey repo was not decodable".to_string()))
+        }
     };
     // the amount of ecdh keys is a multiple of 2, so we can use a bitwise and to select a random one
     if get_ecdh_key {
+        log_info!("Getting public ECDH key from repo");
         let ecdh_key = &pubkey_repo.ecdh_keys[OsRng.next_u32() as usize & (pubkey_repo.ecdh_keys.len() - 1)];
         data_storage.next_server_ecdh_key = Some(CompactServerEcdhKey {
             ecdh_key_id: ecdh_key.ecdh_key_id.clone(),
@@ -34,6 +39,7 @@ pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ec
         });
     }
 
+    log_info!("Getting public ECDSA key from repo");
     let ecdsa_key = &pubkey_repo.ecdsa_key.expect("protobuf should be formatted correctly");
     data_storage.server_ecdsa_key = Some(CompactServerEcdsaKey {
         ecdsa_key_id: ecdsa_key.ecdsa_key_id.to_owned(),
@@ -57,7 +63,13 @@ pub(crate) async fn activate_license_request(
     let mut truncated_store_id = store_id.to_string();
     truncated_store_id.truncate(20);
     
-    let hw_info = get_or_init_hw_info_file().await?;
+    let hw_info = match get_or_init_hw_info_file().await {
+        Ok(v) => v,
+        Err(e) => {
+            log_error!("Failed to get or initialize hardware info file: {}", e);
+            return Err(Error::ApiError("Failed to get or initialize hardware info file".to_string()))
+        }
+    };
 
     let mut product_id_hashmap: HashMap<String, ()> = HashMap::with_capacity(product_ids.len());
     product_ids.iter().for_each(|product_id| {
@@ -79,6 +91,7 @@ pub(crate) async fn activate_license_request(
     let all_product_ids = product_id_hashmap.keys().cloned().collect::<Vec<String>>();
 
     if all_product_ids.is_empty() {
+        log_error!("There were no product IDs provided");
         return Err(LicensingError::NoLicenseFound( "".into()).into())
     }
 
@@ -106,12 +119,20 @@ pub(crate) async fn activate_license_request(
     let mut next_ecdh_key = match license_file.next_server_ecdh_key.unwrap_or_err("The next ECDH key was missing in the license file") {
         Ok(v) => v,
         Err(_) => {
+            log_info!("Next ECDH key was missing in license file; Fetching new pubkeys");
             get_pubkeys(license_file, true).await?;
-            license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?
+            match license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key") {
+                Ok(v) => v,
+                Err(e) => {
+                    log_error!("Failed to get next ECDH key after fetching pubkeys: {}", e);
+                    return Err(Error::ApiError("Failed to get next ECDH key after fetching pubkeys".to_string()))
+                }
+            }
         }
     };
     if let Some(e) = next_ecdh_key.expiration {
         if e < now() {
+            log_info!("ECDH Pubkey expired; Fetching new ecdh pubkey");
             get_pubkeys(license_file, true).await?;
             next_ecdh_key = license_file.next_server_ecdh_key.unwrap_or_err("Error getting next ECDH key")?;
         }
@@ -158,6 +179,7 @@ pub(crate) async fn activate_license_request(
 
     let mut server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server's ECDSA key was missing in the license file")?;
     if server_ecdsa_key.expiration < now() {
+        log_info!("Server ECDSA key expired; Fetching new pubkeys");
         get_pubkeys(license_file, false).await?;
         server_ecdsa_key = license_file.server_ecdsa_key.unwrap_or_err("The server ECDSA key was not set in the license file")?;
     }
@@ -171,6 +193,7 @@ pub(crate) async fn activate_license_request(
         timestamp: now(),
     };
 
+    log_info!("Sending activate license request");
     let response = Client::new()
         .post(LICENSE_ACTIVATION_URL)
         .header("X-Signature", "None")
@@ -181,7 +204,9 @@ pub(crate) async fn activate_license_request(
     let status = response.status().as_u16();
 
     if status != 200 {
+        log_error!("Received non-200 status code from license activation request: {}", status);
         let resp_text = response.text().await?;
+        log_error!("Resp text: {}", resp_text);
         match resp_text.parse::<u32>() {
             Ok(v) => {
                 // there was a licensing error with the request. These come in the
@@ -198,24 +223,36 @@ pub(crate) async fn activate_license_request(
     let sig = response.headers().get("X-Signature").unwrap_or_err("The X-Signature header was missing")?.as_bytes();
     let binary_sig = match BASE64_STANDARD_NO_PAD.decode(sig) {
         Ok(v) => v,
-        Err(_) => return Err(Error::ApiError("The signature was not base64 decodable".to_string()))
+        Err(_) => {
+            log_error!("Failed to decode signature");
+            return Err(Error::ApiError("The signature was not base64 decodable".to_string()))
+        }
     };
 
     let signature: Signature = match Signature::from_der(&binary_sig) {
         Ok(v) => v,
-        Err(_) => return Err(Error::ApiError("The signature was invalid".to_string()))
+        Err(_) => {
+            log_error!("Failed to parse signature");
+            return Err(Error::ApiError("The signature was invalid".to_string()))
+        }
     };
 
     let response_bytes = response.bytes().await?;
 
     let verifying_key = match VerifyingKey::from_sec1_bytes(&server_ecdsa_key.ecdsa_public_key) {
         Ok(v) => v,
-        Err(_) => return Err(Error::ApiError("The verifying key could not be decoded".to_string()))
+        Err(_) => {
+            log_error!("Failed to decode verifying key");
+            return Err(Error::ApiError("The verifying key could not be decoded".to_string()))
+        }
     };
 
     match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(&response_bytes), &signature) {
         Ok(_) => (),
-        Err(_) => return Err(Error::ApiError("The signature did not match in the server's response".into()))
+        Err(_) => {
+            log_error!("Signature verification failed");
+            return Err(Error::ApiError("The signature did not match in the server's response".into()))
+        }
     }
 
     let response_wrapper = Response::decode_length_delimited(response_bytes).expect("If there was an error with the request, it would have been sent as a number or as text; otherwise, it would have been sent in the response wrapper");
@@ -245,8 +282,13 @@ pub(crate) async fn activate_license_request(
 
     let license_response = match LicenseActivationResponse::decode_length_delimited(decrypted.as_slice()) {
         Ok(v) => v,
-        Err(e) => return Err(Error::ApiError(e.to_string()))
+        Err(e) => {
+            log_error!("Failed to decode license response");
+            return Err(Error::ApiError(e.to_string()))
+        }
     };
+
+    log_info!("Successfully received and decrypted license activation response");
 
     // save the license response
     if let Some(license_data) = license_file.license_data.get_mut(&truncated_store_id) {

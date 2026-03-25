@@ -74,6 +74,7 @@ pub enum Error {
     ReqwestError(reqwest::Error),
     SystemTimeError,
     RuntimeError,
+    LockPoisoned,
 }
 
 impl std::fmt::Display for Error {
@@ -87,6 +88,7 @@ impl std::fmt::Display for Error {
             Self::ReqwestError(e) => f.write_str(&e.to_string()),
             Self::SystemTimeError => f.write_str("There was an error getting the current time"),
             Self::RuntimeError => f.write_str("There was an error starting the runtime"),
+            Self::LockPoisoned => f.write_str("A lock was poisoned by a thread panic in another part of the program"),
         }
     }
 }
