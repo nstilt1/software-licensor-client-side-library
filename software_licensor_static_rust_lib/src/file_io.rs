@@ -389,7 +389,8 @@ pub(crate) async fn check_key_file_async(
     product_ids_and_pubkeys: &HashMap<String, String>, 
     machine_id: &str, 
     should_send_request: bool, 
-    api_key: String
+    api_key: String,
+    send_computer_name: bool,
 ) -> Result<LicenseData, Error> {
     let mut license_file = match license_file {
         Some(file) => file,
@@ -440,7 +441,7 @@ pub(crate) async fn check_key_file_async(
         }
         // send request to check for an update
         log_info!("Sending request to check for an update since the key file is expired");
-        match activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
+        match activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file, send_computer_name).await {
             Ok(_) => (),
             Err(e) => {
                 log_error!("Failed to activate license: {}", e);
@@ -482,7 +483,7 @@ pub(crate) async fn check_key_file_async(
     if key_file.check_back_timestamp < now && should_send_request {
         // send request
         log_info!("Key file check back timestamp is {}, now is {}, sending request to check for an update", key_file.check_back_timestamp, now);
-        if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file).await {
+        if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file, send_computer_name).await {
             (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
                 Ok(v) => v,
                 Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))

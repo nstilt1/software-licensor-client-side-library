@@ -293,6 +293,11 @@ pub fn language() -> Language {
 }
 
 #[inline(always)]
+pub fn computer_name() -> Option<String> {
+    platform::computer_name()
+}
+
+#[inline(always)]
 fn sha256_hex(parts: &[&str]) -> String {
     let mut hasher = Sha256::new();
     for part in parts {

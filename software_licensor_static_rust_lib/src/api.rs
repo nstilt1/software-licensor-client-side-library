@@ -11,7 +11,7 @@ use sha2::{Digest, Sha384};
 
 pub(crate) type EcdsaDigest = Sha384;
 
-use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hw_info_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, decrypt_info::ClientEcdhPubkey}, log_error, log_info, now};
+use crate::{LICENSE_ACTIVATION_URL, PUBLIC_KEY_REPO_URL, error::{Error, LicensingError, OptionErrors}, file_io::{get_or_init_hw_info_file, save_license_file}, generated::software_licensor_client::{ClientSideDataStorage, CompactServerEcdhKey, CompactServerEcdsaKey, DecryptInfo, LicenseActivationRequest, LicenseActivationResponse, PubkeyRepo, Request, Response, Stats, decrypt_info::ClientEcdhPubkey}, log_error, log_info, now};
 
 /// Gets the Software Licensor Public Keys.
 pub(crate) async fn get_pubkeys(data_storage: &mut ClientSideDataStorage, get_ecdh_key: bool) -> Result<(), Error> {
@@ -59,6 +59,7 @@ pub(crate) async fn activate_license_request(
     machine_id: &str, 
     license_code: &str, 
     license_file: &mut ClientSideDataStorage,
+    send_computer_name: bool,
 ) -> Result<(), Error> {
     let mut truncated_store_id = store_id.to_string();
     truncated_store_id.truncate(20);
@@ -95,10 +96,21 @@ pub(crate) async fn activate_license_request(
         return Err(LicensingError::NoLicenseFound( "".into()).into())
     }
 
+    let mut hws = hw_info.machine_stats;
+    if let Some(h) = &mut hws {
+        if send_computer_name {
+            h.computer_name = super::stats::computer_name().unwrap_or_else(|| "Unknown Computer".to_string())
+        }
+    } else if send_computer_name {
+        let mut h: Stats = Default::default();
+        h.computer_name = super::stats::computer_name().unwrap_or_else(|| "Unknown Computer".to_string());
+        hws = Some(h);
+    }
+
     let inner_payload = LicenseActivationRequest {
         license_code: license_code.to_string(),
         machine_id: machine_id.to_string(),
-        hardware_stats: hw_info.machine_stats.clone(),
+        hardware_stats: hws.clone(),
         product_ids: all_product_ids,
     };
     let inner_payload_bytes = inner_payload.encode_length_delimited_to_vec();
