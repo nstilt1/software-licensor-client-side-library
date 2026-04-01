@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::file_io::{get_or_init_license_file, get_or_init_hw_info_file, save_hw_info_file};
 use tokio::time::sleep;
 use std::time::Duration;
-pub use crate::stats::get_machine_stats_for_display;
+pub use crate::stats::{StatsDisplay, get_machine_stats_for_display};
 
 /// A semantic version for some software. Can be constructed via `From` or `Into` 
 /// from `&str` in the format:
