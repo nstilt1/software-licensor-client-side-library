@@ -21,10 +21,6 @@ pub fn get_device_id() -> String {
         .or_else(|| parse_cpuinfo_value("Processor"))
         .unwrap_or_default();
 
-    let cpu_freq_mhz = cpu_freq_mhz().unwrap_or(0);
-    let ram_mb = ram_mb().unwrap_or(0);
-    let num_physical_cores = num_physical_cores().unwrap_or(0);
-
     let product_uuid = read_trimmed("/sys/class/dmi/id/product_uuid").unwrap_or_default();
     let board_serial = read_trimmed("/sys/class/dmi/id/board_serial").unwrap_or_default();
     let board_name = read_trimmed("/sys/class/dmi/id/board_name").unwrap_or_default();
@@ -69,6 +65,7 @@ pub fn collect() -> Stats {
     }
 }
 
+#[inline(always)]
 fn read_trimmed(path: &str) -> Option<String> {
     let s = fs::read_to_string(path).ok()?;
     let s = s.trim().to_string();
@@ -79,6 +76,7 @@ fn read_trimmed(path: &str) -> Option<String> {
     }
 }
 
+#[inline(always)]
 fn parse_cpuinfo_value(key: &str) -> Option<String> {
     let content = fs::read_to_string("/proc/cpuinfo").ok()?;
     for line in content.lines() {
@@ -179,7 +177,8 @@ fn num_physical_cores() -> Option<u32> {
     }
 }
 
-fn computer_name() -> Option<String> {
+/// Gets the computer name using gethostname.
+pub fn computer_name() -> Option<String> {
     let mut buf = [0u8; 256];
     let rc = unsafe { gethostname(buf.as_mut_ptr() as *mut i8, buf.len()) };
     if rc != 0 {

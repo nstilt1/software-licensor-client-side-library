@@ -222,6 +222,7 @@ fn cpu_freq_mhz() -> Option<u32> {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline(always)]
 fn cpu_vendor() -> Option<String> {
     let mut bytes = [0u8; 12];
 
@@ -244,6 +245,7 @@ fn cpu_vendor() -> Option<String> {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline(always)]
 fn cpu_model() -> Option<String> {
     #[cfg(target_arch = "x86")]
     use std::arch::x86::__cpuid;
@@ -368,6 +370,7 @@ fn smbios_string<'a>(s: &'a SmbiosStruct<'a>, idx: usize) -> Option<String> {
     s.strings.get(idx - 1).map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
+#[inline(always)]
 fn smbios_system_uuid() -> Option<String> {
     let raw = get_raw_smbios()?;
     let table = smbios_table_bytes(&raw)?;
@@ -395,6 +398,7 @@ fn smbios_system_uuid() -> Option<String> {
     None
 }
 
+#[inline(always)]
 fn smbios_system_serial() -> Option<String> {
     let raw = get_raw_smbios()?;
     let table = smbios_table_bytes(&raw)?;
@@ -407,6 +411,7 @@ fn smbios_system_serial() -> Option<String> {
     None
 }
 
+#[inline(always)]
 fn smbios_baseboard_serial() -> Option<String> {
     let raw = get_raw_smbios()?;
     let table = smbios_table_bytes(&raw)?;

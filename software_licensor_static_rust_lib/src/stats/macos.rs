@@ -70,6 +70,7 @@ pub fn collect() -> Stats {
     }
 }
 
+#[inline(always)]
 fn sysctl_string(name: &str) -> Option<String> {
     let cname = std::ffi::CString::new(name).ok()?;
     let mut len: size_t = 0;
@@ -149,7 +150,8 @@ fn sysctl_u64(name: &str) -> Option<u64> {
     }
 }
 
-fn computer_name() -> Option<String> {
+/// Gets the computer name using gethostname.
+pub fn computer_name() -> Option<String> {
     let mut buf = [0u8; 256];
     let rc = unsafe { gethostname(buf.as_mut_ptr() as *mut i8, buf.len()) };
     if rc != 0 {

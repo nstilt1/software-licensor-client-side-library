@@ -1,9 +1,11 @@
-use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, log_info, stats::Language, status_messages::get_status_message_from_code};
+use crate::stats::get_machine_stats;
+use crate::{file_io::check_key_file_async, log_info, status_messages::get_status_message_from_code};
 use crate::LicenseData;
 use std::collections::HashMap;
 use crate::file_io::{get_or_init_license_file, get_or_init_hw_info_file, save_hw_info_file};
 use tokio::time::sleep;
 use std::time::Duration;
+pub use crate::stats::get_machine_stats_for_display;
 
 /// A semantic version for some software. Can be constructed via `From` or `Into` 
 /// from `&str` in the format:
@@ -93,7 +95,7 @@ impl LicenseStatus {
             product_ids_and_pubkeys,
         };
         let license_data = match result.check_license(true).await {
-            Ok((is_unlocked, license_data, license_code)) => license_data,
+            Ok((_is_unlocked, license_data, _license_code)) => license_data,
             Err(e) => e.1,
         };
         (result, license_data)

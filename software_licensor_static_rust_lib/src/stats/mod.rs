@@ -24,7 +24,8 @@ pub struct Stats {
 }
 
 /// Stats that can be displayed to the user.
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StatsDisplay {
     pub os_name: String,
     pub computer_name: String,

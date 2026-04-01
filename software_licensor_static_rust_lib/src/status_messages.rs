@@ -45,13 +45,6 @@ const SUPPORTED_LANGUAGES: &[&str] = &[
     "es",
 ];
 
-#[cfg_attr(test, derive(Default))]
-pub struct LicenseStatus {
-    pub store_id: String,
-    pub company_name: String,
-    pub product_ids_and_pubkeys: HashMap<String, String>,
-}
-
 /// Normalizes a locale string.
 fn normalize_locale(s: &str) -> String {
     let mut s = s.trim().to_lowercase();

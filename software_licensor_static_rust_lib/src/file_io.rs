@@ -71,7 +71,7 @@ pub(crate) fn get_log_file_path() -> Result<PathBuf, Error> {
     #[cfg(target_os = "windows")]
     return Ok(Path::new(&format!("C:\\ProgramData\\HyperformanceSolutions")).to_owned());
     #[cfg(target_os = "macos")]
-    let dir_path = {
+    {
         if let Some(proj_dirs) = ProjectDirs::from("com", "Hyperformance Solutions", "Software Licensor") {
             return Ok(proj_dirs.data_dir().to_path_buf())
         } else {

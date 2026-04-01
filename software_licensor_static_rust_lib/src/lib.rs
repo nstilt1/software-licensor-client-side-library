@@ -7,7 +7,7 @@ use std::{
     ffi::{CString, CStr}, 
     os::raw::{c_char, c_int}
 };
-#[cfg(feature = "serde")]
+#[cfg(all(feature = "rlib", feature = "serde"))]
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
 
@@ -131,7 +131,6 @@ impl LicenseData {
         )
     }
     fn error(error: Error, license_code: &str) -> Self {
-        let error_message = error.to_string();
         let (license_code, error_code) = error.get_license_code_and_error_code();
         let error_message = status_messages::get_status_message_from_code(error_code as i32);
         Self::new(
@@ -193,42 +192,7 @@ impl LicenseData {
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn update_machine_info(
-    save_system_stats: bool, 
-    os_name: *const c_char, 
-    computer_name: *const c_char, 
-    is_64_bit: bool, 
-    users_language: *const c_char, 
-    display_language: *const c_char, 
-    num_logical_cores: c_int, 
-    num_physical_cores: c_int, 
-    cpu_freq_mhz: c_int, 
-    ram_mb: c_int, 
-    page_size: c_int, 
-    cpu_vendor: *const c_char, 
-    cpu_model: *const c_char, 
-    has_mmx: bool, 
-    has_3d_now: bool, 
-    has_fma3: bool, 
-    has_fma4: bool, 
-    has_sse: bool, 
-    has_sse2: bool, 
-    has_sse3: bool, 
-    has_ssse3: bool, 
-    has_sse41: bool, 
-    has_sse42: bool,
-    has_avx: bool,
-    has_avx2: bool,
-    has_avx512f: bool,
-    has_avx512bw: bool,
-    has_avx512cd: bool,
-    has_avx512dq: bool,
-    has_avx512er: bool,
-    has_avx512ifma: bool,
-    has_avx512pf: bool,
-    has_avx512vbmi: bool,
-    has_avx512vl: bool,
-    has_avx512vpopcntdq: bool,
-    has_neon: bool,
+    save_system_stats: bool,
 ) {
     #[cfg(feature = "logging")]
     {
@@ -240,12 +204,6 @@ pub extern "C" fn update_machine_info(
             log_error!("failed to initialize file logging at update_machine_info");
         }
     }
-    let os_name_str = parse_c_char!(os_name);
-    let computer_name_str = parse_c_char!(computer_name);
-    let users_language_str = parse_c_char!(users_language);
-    let display_language_str = parse_c_char!(display_language);
-    let cpu_vendor_str = parse_c_char!(cpu_vendor);
-    let cpu_model_str = parse_c_char!(cpu_model);
     let rt = match Runtime::new() {
         Ok(v) => v,
         Err(_) => return
@@ -264,44 +222,10 @@ pub extern "C" fn update_machine_info(
             return
         }
 
-        let current_stats = Some(Stats {
-            os_name: os_name_str.to_string(),
-            computer_name: computer_name_str.to_string(),
-            is_64_bit,
-            users_language: users_language_str.to_string(),
-            display_language: display_language_str.to_string(),
-            num_logical_cores: num_logical_cores as u32,
-            num_physical_cores: num_physical_cores as u32,
-            cpu_freq_mhz: cpu_freq_mhz as u32,
-            cpu_architecture: std::env::consts::ARCH.to_string(),
-            ram_mb: ram_mb as u32,
-            page_size: page_size as u32,
-            cpu_vendor: cpu_vendor_str.to_string(),
-            cpu_model: cpu_model_str.to_string(),
-            has_mmx,
-            has_3d_now,
-            has_fma3,
-            has_fma4,
-            has_sse,
-            has_sse2,
-            has_sse3,
-            has_ssse3,
-            has_sse41,
-            has_sse42,
-            has_avx,
-            has_avx2,
-            has_avx512f,
-            has_avx512bw,
-            has_avx512cd,
-            has_avx512dq,
-            has_avx512er,
-            has_avx512ifma,
-            has_avx512pf,
-            has_avx512vbmi,
-            has_avx512vl,
-            has_avx512vpopcntdq,
-            has_neon,
-        });
+        // Safety: Stats are only `Some` if save_system_stats is true.
+        let current_stats = unsafe {
+            crate::stats::get_machine_stats(save_system_stats)
+        };
 
         if hw_info_file.machine_stats.ne(&current_stats) {
             hw_info_file.machine_stats = current_stats;
