@@ -1,5 +1,4 @@
 use crate::{file_io::check_key_file_async, generated::software_licensor_client::Stats, log_info, stats::Language, status_messages::get_status_message_from_code};
-use std::env::consts::{OS, ARCH};
 use crate::LicenseData;
 use std::collections::HashMap;
 use crate::file_io::{get_or_init_license_file, get_or_init_hw_info_file, save_hw_info_file};
@@ -12,7 +11,7 @@ use std::time::Duration;
 /// * major.minor (e.g. `1.2`)
 /// * major.minor.patch (e.g. `1.2.3`)
 /// * major.minor.patch.build (e.g. `1.2.3.4`)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SemanticVersion {
     pub major: u32,
     pub minor: u32,
@@ -31,8 +30,26 @@ impl From<&str> for SemanticVersion {
     }
 }
 
+impl PartialEq for SemanticVersion {
+    fn eq(&self, other: &Self) -> bool {
+        if self.major == 0 && self.major == self.minor && self.minor == self.patch {
+            return true;
+        }
+        if other.major == 0 && other.major == other.minor && other.minor == other.patch {
+            return true;
+        }
+        self.major == other.major && self.minor == other.minor && self.patch == other.patch && self.build == other.build
+    }
+}
+
 impl PartialOrd for SemanticVersion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.major == 0 && self.major == self.minor && self.minor == self.patch {
+            return self.major.partial_cmp(&self.minor)
+        }
+        if other.major == 0 && other.major == other.minor && other.minor == other.patch {
+            return other.major.partial_cmp(&other.minor)
+        }
         if self.major != other.major {
             return self.major.partial_cmp(&other.major);
         }
@@ -134,130 +151,15 @@ impl LicenseStatus {
 
     /// Checks if an update is available by comparing the current version with 
     /// the version in the license data.
+    /// 
+    /// If an empty string is supplied as the current version or if the version 
+    /// in the license data is an empty string, this function will return false 
+    /// so that no update is thought to be available, since an empty version string 
+    /// is uninitialized and should not be treated as a valid version.
     pub fn is_update_available(&self, current_version: &str, license_data: &LicenseData) -> bool {
         let current_version: SemanticVersion = current_version.into();
         let cloud_version: SemanticVersion = license_data.version.as_str().into();
         cloud_version > current_version
-    }
-}
-
-/// Detects if the current machine supports a given x86 feature.
-macro_rules! detect_x86_feature {
-    ($feature:literal) => {{
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            std::is_x86_feature_detected!($feature)
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-        {
-            false
-        }
-    }};
-}
-
-/// Detects if the current machine supports a given ARM/aarch64 feature.
-macro_rules! detect_arm_feature {
-    ($feature:literal) => {{
-        #[cfg(target_arch = "arm")]
-        {
-            std::arch::is_arm_feature_detected!($feature)
-        }
-        #[cfg(target_arch = "aarch64")]
-        {
-            true
-        }
-        #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
-        {
-            false
-        }
-    }};
-}
-
-/// Gets the page size of the current machine.
-fn get_page_size() -> Option<u32> {
-    #[cfg(unix)]
-    {
-        let v = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-        if v <= 0 {
-            None
-        } else {
-            u32::try_from(v).ok()
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use windows_sys::Win32::System::SystemInformation::{GetSystemInfo, SYSTEM_INFO};
-
-        unsafe {
-            let mut info = std::mem::zeroed::<SYSTEM_INFO>();
-            GetSystemInfo(&mut info);
-            Some(info.dwPageSize)
-        }
-    }
-
-    #[cfg(not(any(unix, target_os = "windows")))]
-    {
-        None
-    }
-}
-
-/// Returns the current machine's stats. This includes various hardware 
-/// information about the machine, such as the CPU vendor, model, number of 
-/// cores, amount of RAM, and various CPU features.
-/// 
-/// # Safety
-/// 
-/// This function collects hardware information that could potentially be used to
-/// uniquely identify a machine, and therefore could be a privacy concern. It is 
-/// the caller's responsibility to ensure that this function is only called when 
-/// the user has explicitly opted in to the collection of this information.
-#[inline(always)]
-pub(crate) unsafe fn get_machine_stats(save_system_stats: bool) -> Option<Stats> {
-    if !save_system_stats {
-        return None;
-    }
-    unsafe {
-        let s = super::stats::Stats::collect();
-
-        return Some(Stats { 
-            os_name: OS.to_string(), 
-            computer_name: s.computer_name, 
-            is_64_bit: if size_of::<usize>() == 8 { true } else { false }, 
-            users_language: s.users_language, 
-            display_language: s.display_language, 
-            num_logical_cores: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as u32, 
-            num_physical_cores: s.num_physical_cores, 
-            cpu_freq_mhz: s.cpu_freq_mhz, 
-            cpu_architecture: ARCH.to_string(), 
-            ram_mb: s.ram_mb, 
-            page_size: get_page_size().unwrap_or(0), 
-            cpu_vendor: s.cpu_vendor, 
-            cpu_model: s.cpu_model, 
-            has_mmx: detect_x86_feature!("mmx"),
-            has_3d_now: false,
-            has_fma3: detect_x86_feature!("fma"),
-            has_fma4: false,
-            has_sse: detect_x86_feature!("sse"),
-            has_sse2: detect_x86_feature!("sse2"),
-            has_sse3: detect_x86_feature!("sse3"),
-            has_ssse3: detect_x86_feature!("ssse3"),
-            has_sse41: detect_x86_feature!("sse4.1"),
-            has_sse42: detect_x86_feature!("sse4.2"),
-            has_avx: detect_x86_feature!("avx"),
-            has_avx2: detect_x86_feature!("avx2"),
-            has_avx512f: detect_x86_feature!("avx512f"),
-            has_avx512bw: detect_x86_feature!("avx512bw"),
-            has_avx512cd: detect_x86_feature!("avx512cd"),
-            has_avx512dq: detect_x86_feature!("avx512dq"),
-            has_avx512er: detect_x86_feature!("avx512er"),
-            has_avx512ifma: detect_x86_feature!("avx512ifma"),
-            has_avx512pf: detect_x86_feature!("avx512pf"),
-            has_avx512vbmi: detect_x86_feature!("avx512vbmi"),
-            has_avx512vl: detect_x86_feature!("avx512vl"),
-            has_avx512vpopcntdq: detect_x86_feature!("avx512vpopcntdq"),
-            has_neon: detect_arm_feature!("neon"),
-        })
     }
 }
 
@@ -366,5 +268,13 @@ mod tests {
         assert!(v6 == v4);
         assert!(v6 < v8);
         assert!(v7 < v8);
+
+        let v0: SemanticVersion = "".into();
+        let all_0s: SemanticVersion = "0.0.0.0".into();
+
+        assert!(v0 == all_0s);
+        assert!(v0 == v1);
+        assert!(v0 == v5);
+        assert!(v5 == v0);
     }
 }

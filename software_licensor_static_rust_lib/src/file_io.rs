@@ -79,14 +79,14 @@ pub(crate) fn get_log_file_path() -> Result<PathBuf, Error> {
         }
     };
     #[cfg(target_os = "linux")]
-    return Ok(Path::new(format!("{}/.local/share/HyperformanceSolutions", std::env::var("HOME")?)));
+    return Ok(Path::new(&format!("{}/.local/share/HyperformanceSolutions", std::env::var("HOME")?)).into());
     #[cfg(target_os = "android")]
-    return Ok(Path::new(format!("/data/data/HyperformanceSolutions/files")));
+    return Ok(Path::new(&format!("/data/data/HyperformanceSolutions/files")));
     
     // instead of panicking in this function, this will return a path that will
     // probably cause an error
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android")))]
-    return Ok(Path::new(format!("/HyperformanceSolutions")));
+    return Ok(Path::new(&format!("/HyperformanceSolutions")));
 }
 
 pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key: String) -> Result<ClientSideDataStorage, Error> {
