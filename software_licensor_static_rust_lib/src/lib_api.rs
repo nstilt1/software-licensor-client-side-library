@@ -163,6 +163,39 @@ impl LicenseStatus {
         let cloud_version: SemanticVersion = license_data.version.as_str().into();
         cloud_version > current_version
     }
+
+    /// Gets the current system information that is already stored in the cloud.
+    pub async fn get_current_system_information_that_is_stored_in_cloud(&self) -> StatsDisplay {
+        match get_or_init_hw_info_file().await {
+            Ok(v) => {
+                v.machine_stats.unwrap_or_default().into()
+            },
+            Err(_) => StatsDisplay::default(),
+        }
+    }
+
+    /// Erases the current system information that is stored in the cloud.
+    /// 
+    /// The way this works is, the data in the hardware info file is sent to the 
+    /// cloud during license activation, which is done repeatedly over time. The 
+    /// client will send a copy of whatever is currently in the hardware info 
+    /// file, so by erasing the machine stats, the next time the client sends a 
+    /// request, the cloud will erase the machine stats that it has stored for 
+    /// this machine since the client is now sending an empty machine stats. 
+    /// This is a way to erase the machine stats from the cloud without having 
+    /// to make a specific API request to erase the machine stats, since there 
+    /// isn't currently an API endpoint to specifically erase the machine stats.
+    pub async fn erase_cloud_hardware_info(&self) -> Result<(), String> {
+        let mut hw_info_file = match get_or_init_hw_info_file().await {
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string())
+        };
+        hw_info_file.machine_stats = None;
+        match save_hw_info_file(&hw_info_file) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }
 
 /// Updates the machine info file with the latest machine stats, if the bool is 
