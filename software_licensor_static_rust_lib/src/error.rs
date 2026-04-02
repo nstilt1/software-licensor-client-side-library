@@ -1,5 +1,5 @@
 use std::time::SystemTimeError;
-use crate::status_messages::get_status_message_from_code;
+use crate::{LicenseData, status_messages::get_status_message_from_code};
 
 /// Implements some error types that correspond to error codes.
 macro_rules! impl_error_codes {
@@ -37,6 +37,14 @@ macro_rules! impl_error_codes {
             }
         }
     };
+}
+
+impl std::fmt::Display for LicensingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (error_code, _license_code) = self.get_error_and_license_codes();
+        let message = get_status_message_from_code(error_code as i32);
+        f.write_str(&format!("Error {}: {}", error_code.ilog2(), message))
+    }
 }
 
 impl_error_codes!(
@@ -81,7 +89,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ApiError(s) => f.write_str(s),
-            Self::LicensingError(v) => f.write_str(&get_status_message_from_code(v.get_error_and_license_codes().0 as i32)),
+            Self::LicensingError(v) => f.write_str(&v.to_string()),
             Self::CryptoError(s) => f.write_str(s),
             Self::OptionError(s) => f.write_str(s),
             Self::IoError => f.write_str("There was an IO error"),
@@ -102,6 +110,12 @@ impl Error {
             },
             _ => ("", 0),
         }
+    }
+}
+
+impl From<Error> for LicenseData {
+    fn from(value: Error) -> Self {
+        LicenseData::error(&value)
     }
 }
 

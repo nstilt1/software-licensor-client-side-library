@@ -116,7 +116,7 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
                 Ok(data_storage)
             },
             Err(_) => {
-                log_info!("Failed to decode license file, initializing a new one");
+                log_error!("Failed to decode license file, initializing a new one");
                 // need to initialize the file
                 let mut license_data = HashMap::new();
                 license_data.insert(api_key, LicenseDataProto {
@@ -273,11 +273,17 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
         let product_id = &key_file.product_id;
         let sig_bytes = match license_activation_response.key_file_signatures.get(product_id) {
             Some(v) => v,
-            None => return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+            None => {
+                log_error!("Failed to find signature for product id: {}", product_id);
+                return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+            }
         };
         let signature: Signature = match Signature::from_bytes(sig_bytes.as_slice().into()) {
             Ok(v) => v,
-            Err(_) => return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+            Err(_) => {
+                log_error!("Failed to create signature from bytes");
+                return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+            }
         };
         return Ok((key_file.clone(), signature, license_activation_response.clone()))
     }
@@ -289,7 +295,9 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
                 error_codes.push(*v);
             }
         });
+        log_error!("No key files found for the product ids. Licensing error codes for the product ids: {:?}", error_codes);
         if error_codes.is_empty() {
+
             return Err(LicensingError::NoLicenseFound(license_data.license_code.clone()))
         }
         // prioritizing specific licensing errors over others
@@ -450,11 +458,15 @@ pub(crate) async fn check_key_file_async(
         }
         (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
             Ok(v) => v,
-            Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
+            Err(licensing_error) =>  {
+                log_error!("Failed to get latest key file after sending request");
+                log_error!("Licensing error: {:?}", licensing_error.get_error_and_license_codes().0);
+                return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
+            }
         };
         if key_file.message_code != 1 && key_file.message_code < 512 {
             log_error!("After sending request, key_file.message code is still not 1: {}", key_file.message_code);
-            return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, LicensingError::from((key_file.message_code as u32, license_code.clone())), api_key))
+            return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32));
         }
         if key_file.message_code >= 512 {
             log_error!("Error code is >= 512: {}", key_file.message_code);
@@ -477,7 +489,7 @@ pub(crate) async fn check_key_file_async(
             } else {
                 LicensingError::TrialEnded(license_code)
             };
-            return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, err, store_id.to_string()))
+            return Ok(LicenseData::error(&Error::LicensingError(err)))
         }
     }
     if key_file.check_back_timestamp < now && should_send_request {
@@ -486,7 +498,10 @@ pub(crate) async fn check_key_file_async(
         if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file, send_computer_name).await {
             (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
                 Ok(v) => v,
-                Err(licensing_error) => return Err(handle_licensing_error(&mut license_file, &product_ids, company_name_str, licensing_error, api_key))
+                Err(licensing_error) => {
+                    log_error!("activate_license_request failed when check back timestmap was less than now");
+                    return Ok(LicenseData::error(&Error::LicensingError(licensing_error)));
+                }
             }
         }
     }

@@ -130,7 +130,7 @@ impl LicenseData {
             None
         )
     }
-    fn error(error: Error, license_code: &str) -> Self {
+    fn error(error: &Error) -> Self {
         let (license_code, error_code) = error.get_license_code_and_error_code();
         let error_message = status_messages::get_status_message_from_code(error_code as i32);
         Self::new(
@@ -179,7 +179,18 @@ impl LicenseData {
     }
     fn licensing_error(licensing_error: &LicensingError) -> Self {
         let (error_code, license_code) = licensing_error.get_error_and_license_codes();
-        Self::new(error_code as i32, "", "", "", "", "", "", &license_code, None, None)
+        Self::new(
+            error_code as i32, 
+            "", 
+            "", 
+            "", 
+            "", 
+            "", 
+            licensing_error.to_string().as_str(), 
+            &license_code, 
+            None, 
+            None
+        )
     }
 }
 
@@ -476,7 +487,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
             Ok(v) => {
                 return box_out!(v)
             },
-            Err(e) => box_out!(LicenseData::error(e, ""))
+            Err(e) => box_out!(LicenseData::error(&e))
         }
     })
 }

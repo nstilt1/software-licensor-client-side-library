@@ -10,7 +10,7 @@ const ENGLISH_STATUS_MESSAGES: &[&str] = &[
     "Offline codes are disabled for this software.",
     "The license code is invalid.",
     "This machine has been deactivated. Please enter another license code.",
-    "Unknown error. Please contact support with the error code to resolve this issue.",
+    "Unknown error. You may need to update your software. Please contact support with the error code if that does not fix the issue.",
 ];
 
 const FRENCH_STATUS_MESSAGES: &[&str] = &[
@@ -23,7 +23,7 @@ const FRENCH_STATUS_MESSAGES: &[&str] = &[
     "Les codes hors ligne sont désactivés pour ce logiciel.",
     "Le code de licence est invalide.",
     "Cette machine a été désactivée. Veuillez saisir un autre code de licence.",
-    "Erreur inconnue. Veuillez contacter le support avec le code d’erreur afin de résoudre ce problème.",
+    "Erreur inconnue. Vous devrez peut-être mettre à jour votre logiciel. Veuillez contacter le support avec le code d’erreur si cela ne résout pas le problème.",
 ];
 
 const SPANISH_STATUS_MESSAGES: &[&str] = &[
@@ -36,7 +36,7 @@ const SPANISH_STATUS_MESSAGES: &[&str] = &[
     "Los códigos sin conexión están deshabilitados para este software.",
     "El código de licencia no es válido.",
     "Este dispositivo ha sido desactivado. Por favor, introduzca otro código de licencia.",
-    "Error desconocido. Por favor, contacte con soporte con el código de error para resolver este problema.",
+    "Error desconocido. Es posible que necesite actualizar su software. Por favor, contacte con el soporte e incluya el código de error si esto no resuelve el problema.",
 ];
 
 const SUPPORTED_LANGUAGES: &[&str] = &[

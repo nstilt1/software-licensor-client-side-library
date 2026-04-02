@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use aes_gcm::{aead::{Aead, Nonce}, Aes256Gcm, KeyInit};
 use base64::prelude::{BASE64_STANDARD_NO_PAD, Engine as _};
@@ -89,8 +89,10 @@ pub(crate) async fn activate_license_request(
         }
     }
 
-    let all_product_ids = product_id_hashmap.keys().cloned().collect::<Vec<String>>();
-
+    let mut all_product_ids = product_id_hashmap.keys().cloned().collect::<HashSet<String>>();
+    for (k, v) in &license_file.license_data {
+        all_product_ids.insert(k.clone());
+    }
     if all_product_ids.is_empty() {
         log_error!("There were no product IDs provided");
         return Err(LicensingError::NoLicenseFound( "".into()).into())
@@ -111,7 +113,7 @@ pub(crate) async fn activate_license_request(
         license_code: license_code.to_string(),
         machine_id: machine_id.to_string(),
         hardware_stats: hws.clone(),
-        product_ids: all_product_ids,
+        product_ids: all_product_ids.iter().cloned().collect(),
     };
     let inner_payload_bytes = inner_payload.encode_length_delimited_to_vec();
 

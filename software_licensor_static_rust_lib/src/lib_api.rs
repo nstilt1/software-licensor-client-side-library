@@ -1,5 +1,5 @@
 use crate::stats::get_machine_stats;
-use crate::{file_io::check_key_file_async, log_info, status_messages::get_status_message_from_code};
+use crate::{file_io::check_key_file_async, log_info, log_error, status_messages::get_status_message_from_code};
 use crate::LicenseData;
 use std::collections::HashMap;
 use crate::file_io::{get_or_init_license_file, get_or_init_hw_info_file, save_hw_info_file};
@@ -99,6 +99,7 @@ impl LicenseStatus {
 
                 log_error!("failed to initialize file logging at LicenseStatus::new()");
             }
+            log_info!("Inside LicenseStatus::new ==================");
         }
         let result = Self {
             store_id: store_id.to_string(),
@@ -108,7 +109,10 @@ impl LicenseStatus {
         };
         let license_data = match result.check_license(true).await {
             Ok((_is_unlocked, license_data, _license_code)) => license_data,
-            Err(e) => e.1,
+            Err(e) => {
+                log_error!("Error at result.check_license(true). Setting license data to: {:?}", &e.1);
+                e.1
+            }
         };
         (result, license_data)
     }
@@ -138,7 +142,7 @@ impl LicenseStatus {
             Err(e) => {
                 let license_data = match e {
                     crate::Error::LicensingError(e) => LicenseData::licensing_error(&e),
-                    _ => LicenseData::error(e, "")
+                    _ => LicenseData::error(&e)
                 };
                 (license_data, false)
             },
@@ -152,13 +156,14 @@ impl LicenseStatus {
 
     /// Reads the reply from the webserver after attempting to activate the license.
     #[inline(always)]
-    pub async fn read_reply_from_webserver(&self, license_code: &str, save_system_stats: bool) -> Result<(bool, LicenseData), String> {
+    pub async fn read_reply_from_webserver(&self, license_code: &str, save_system_stats: bool) -> Result<(bool, LicenseData), (bool, LicenseData)> {
+        log_info!("Running read_reply_from_webserver");
         let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats, self.send_computer_name).await {
             Ok(v) => v,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(e),
         };
         if !result.0 {
-            return Err("License activation failed. Please check your internet connection and try again.".to_string());
+            return Ok((false, result.1));
         }
         Ok(result)
     }
@@ -245,14 +250,18 @@ async unsafe fn update_machine_info(save_system_stats: bool) {
 
 /// Reads the reply from the webserver after attempting to activate the license.
 #[inline(always)]
-async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool, send_computer_name: bool) -> Result<(bool, LicenseData), String> {
+async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool, send_computer_name: bool) -> Result<(bool, LicenseData), (bool, LicenseData)> {
     // Safety: This function is called while using save_system_stats.
     unsafe {
         update_machine_info(save_system_stats).await;
     }
     let mut license_file = match get_or_init_license_file(company_name, store_id.to_string()).await {
         Ok(v) => v,
-        Err(e) => return Err(e.to_string())
+        Err(e) => 
+        {
+            log_error!("Failed to get or init license file in read_reply_from_webserver");
+            return Err((false, LicenseData::error(&e)))
+        }
     };
 
     let machine_id = super::stats::device_id();
@@ -268,8 +277,9 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
     ).await {
         Ok(_) => (),
         Err(e) => {
+            log_error!("activate_license_request failed in read_reply_from_webserver");
             sleep(Duration::from_secs(5)).await;
-            return Err(e.to_string())
+            return Err((false, LicenseData::error(&e)))
         }
     }
     match check_key_file_async(
@@ -284,8 +294,9 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
     ).await {
         Ok(v) => return Ok((true, v)),
         Err(e) => {
+            log_error!("check_key_file_async failed in read_reply_from_webserver after activating license");
             sleep(Duration::from_secs(5)).await;
-            return Err(e.to_string())
+            return Err((false, LicenseData::error(&e)))
         }
     }
 }
