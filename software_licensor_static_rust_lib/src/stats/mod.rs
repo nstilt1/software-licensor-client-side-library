@@ -21,6 +21,7 @@ pub struct Stats {
     pub users_language: String,
     pub display_language: String,
     pub computer_name: String,
+    pub gpu_info: Option<GpuInfo>,
 }
 
 /// Stats that can be displayed to the user.
@@ -64,10 +65,20 @@ pub struct StatsDisplay {
     pub has_avx512vl: bool,
     pub has_avx512vpopcntdq: bool,
     pub has_neon: bool,
+    pub gpu_name: Option<String>,
+    pub gpu_brand: Option<String>,
+    pub gpu_backend: Option<String>,
+    pub gpu_type: Option<String>,
+    pub gpu_vram_bytes: Option<u64>,
+    pub gpu_unified_memory: Option<bool>,
+    pub gpu_core_count: Option<u32>,
+    pub npu_available: Option<bool>,
+    pub tpu_available: Option<bool>,
 }
 
 impl From<crate::generated::software_licensor_client::Stats> for StatsDisplay {
     fn from(value: crate::generated::software_licensor_client::Stats) -> Self {
+        let gpu_info = value.gpu_info.unwrap_or_default();
         Self {
             os_name: value.os_name,
             computer_name: value.computer_name,
@@ -105,13 +116,22 @@ impl From<crate::generated::software_licensor_client::Stats> for StatsDisplay {
             has_avx512vl: value.has_avx512vl,
             has_avx512vpopcntdq: value.has_avx512vpopcntdq,
             has_neon: value.has_neon,
+            gpu_name: gpu_info.gpu_name,
+            gpu_brand: gpu_info.gpu_brand,
+            gpu_backend: gpu_info.gpu_backend,
+            gpu_type: gpu_info.gpu_type,
+            gpu_vram_bytes: gpu_info.gpu_vram_bytes,
+            gpu_unified_memory: gpu_info.gpu_unified_memory,
+            gpu_core_count: gpu_info.gpu_core_count,
+            npu_available: gpu_info.npu_available,
+            tpu_available: gpu_info.tpu_available,
         }
     }
 }
 
 /// Gets the current machine's stats in a format that can be displayed to the user.
-pub unsafe fn get_machine_stats_for_display() -> Result<StatsDisplay, String> {
-    if let Some(stats) = get_machine_stats(true) {
+pub async unsafe fn get_machine_stats_for_display() -> Result<StatsDisplay, String> {
+    if let Some(stats) = get_machine_stats(true).await {
         Ok(StatsDisplay::from(stats))
     } else {
         Err("Failed to get machine stats".into())
@@ -220,12 +240,28 @@ fn get_page_size() -> Option<u32> {
 /// the caller's responsibility to ensure that this function is only called when 
 /// the user has explicitly opted in to the collection of this information.
 #[inline(always)]
-pub(crate) unsafe fn get_machine_stats(save_system_stats: bool) -> Option<crate::generated::software_licensor_client::Stats> {
+pub(crate) async unsafe fn get_machine_stats(save_system_stats: bool) -> Option<crate::generated::software_licensor_client::Stats> {
     if !save_system_stats {
         return None;
     }
     unsafe {
-        let s = super::stats::Stats::collect();
+        let s = super::stats::Stats::collect().await;
+        let gpu = if let Some(gpu_info) = s.gpu_info {
+            Some(crate::generated::software_licensor_client::GpuInfo {
+                gpu_name: gpu_info.name,
+                gpu_brand: gpu_info.brand,
+                gpu_backend: gpu_info.backend,
+                gpu_type: gpu_info.gpu_type,
+                gpu_vram_bytes: gpu_info.vram_bytes,
+                gpu_unified_memory: gpu_info.unified_memory,
+                gpu_core_count: gpu_info.core_count,
+                npu_available: gpu_info.npu_available,
+                tpu_available: gpu_info.tpu_available,
+                ..Default::default()
+            })
+        } else {
+            None
+        };
 
         return Some(crate::generated::software_licensor_client::Stats { 
             os_name: OS.to_string(), 
@@ -264,6 +300,7 @@ pub(crate) unsafe fn get_machine_stats(save_system_stats: bool) -> Option<crate:
             has_avx512vl: detect_x86_feature("avx512vl"),
             has_avx512vpopcntdq: detect_x86_feature("avx512vpopcntdq"),
             has_neon: detect_arm_feature("neon"),
+            gpu_info: gpu,
         })
     }
 }
@@ -275,8 +312,8 @@ impl Stats {
     /// # Safety
     /// This function may call platform-specific APIs that are unsafe. However, 
     /// it should not cause any harm to the system.
-    pub unsafe fn collect() -> Self {
-        platform::collect()
+    pub async unsafe fn collect() -> Self {
+        platform::collect().await
     }
 }
 
@@ -330,14 +367,6 @@ fn mib_to_u32(bytes: u64) -> u32 {
     (bytes / (1024 * 1024)).min(u32::MAX as u64) as u32
 }
 
-#[cfg(target_os = "windows")]
-mod windows;
-
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "macos")]
-mod macos;
-
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 mod platform {
     use super::*;
@@ -345,4 +374,230 @@ mod platform {
     pub fn collect() -> Stats {
         Stats::default()
     }
+}
+
+use std::cmp::Reverse;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct GpuInfo {
+    /// Human-readable adapter name, e.g. "NVIDIA GeForce RTX 4070"
+    pub name: Option<String>,
+
+    /// Best-effort vendor/brand name, e.g. "NVIDIA", "AMD", "Intel", "Apple"
+    pub brand: Option<String>,
+
+    /// wgpu backend name, e.g. "Vulkan", "Metal", "Dx12"
+    pub backend: Option<String>,
+
+    /// "Integrated" | "Discrete" | "Virtual" | "CPU" | "Other" | "Arm"
+    pub gpu_type: Option<String>,
+
+    /// Best-effort memory figure.
+    ///
+    /// Semantics differ by platform:
+    /// - Windows DXGI: dedicated VRAM bytes
+    /// - macOS Metal: recommended max working set size
+    /// - Linux/Vulkan: sum of DEVICE_LOCAL heap sizes
+    pub vram_bytes: Option<u64>,
+
+    /// True on unified-memory GPUs when detectable.
+    pub unified_memory: Option<bool>,
+
+    /// Not reliably exposed cross-platform from one stable API.
+    pub core_count: Option<u32>,
+
+    /// Placeholder for future accelerator detection.
+    pub npu_available: Option<bool>,
+
+    /// Placeholder for future accelerator detection.
+    pub tpu_available: Option<bool>,
+}
+
+impl Default for GpuInfo {
+    fn default() -> Self {
+        Self {
+            name: None,
+            brand: None,
+            backend: None,
+            gpu_type: None,
+            vram_bytes: None,
+            unified_memory: None,
+            core_count: None,
+            npu_available: None,
+            tpu_available: None,
+        }
+    }
+}
+
+/// Async version for crates that already have an async runtime.
+pub async fn detect_primary_gpu_info() -> Option<GpuInfo> {
+    let instance = make_wgpu_instance();
+
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all()).await;
+    if adapters.is_empty() {
+        return None;
+    }
+
+    let mut candidates = adapters
+        .into_iter()
+        .map(|adapter| {
+            let info = adapter.get_info();
+            let score = adapter_priority(&info.device_type);
+            (score, adapter, info)
+        })
+        .collect::<Vec<_>>();
+
+    // Prefer discrete > integrated > other > virtual > cpu
+    candidates.sort_by_key(|(score, _, _)| Reverse(*score));
+
+    for (_, _adapter, info) in candidates {
+        // Treat pure software adapters as "no GPU".
+        if info.device_type == wgpu::DeviceType::Cpu {
+            continue;
+        }
+
+        let platform_probe = platform_gpu_probe(info.vendor, info.device, &info.name);
+
+        let unified_memory = platform_probe.unified_memory;
+        let gpu_type = Some(classify_gpu_type(&info, unified_memory));
+
+        return Some(GpuInfo {
+            name: non_empty(&info.name),
+            brand: infer_brand(info.vendor, &info.name),
+            backend: Some(format!("{:?}", info.backend)),
+            gpu_type,
+            vram_bytes: platform_probe.vram_bytes,
+            unified_memory,
+            core_count: None,
+            npu_available: None,
+            tpu_available: None,
+        });
+    }
+
+    None
+}
+
+/// Blocking convenience wrapper for static libraries or sync call sites.
+pub fn detect_primary_gpu_info_blocking() -> Option<GpuInfo> {
+    pollster::block_on(detect_primary_gpu_info())
+}
+
+fn make_wgpu_instance() -> wgpu::Instance {
+    wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    })
+}
+
+fn adapter_priority(device_type: &wgpu::DeviceType) -> u8 {
+    match device_type {
+        wgpu::DeviceType::DiscreteGpu => 5,
+        wgpu::DeviceType::IntegratedGpu => 4,
+        wgpu::DeviceType::Other => 3,
+        wgpu::DeviceType::VirtualGpu => 2,
+        wgpu::DeviceType::Cpu => 1,
+    }
+}
+
+fn classify_gpu_type(info: &wgpu::AdapterInfo, unified_memory: Option<bool>) -> String {
+    let lower_name = info.name.to_ascii_lowercase();
+
+    // Best-effort "Arm" bucket for Apple/ARM-family GPUs.
+    // This is heuristic because wgpu's portable enum does not have an Arm variant.
+    if info.device_type != wgpu::DeviceType::Cpu
+        && (lower_name.contains("apple")
+            || lower_name.contains("mali")
+            || lower_name.contains("adreno")
+            || info.vendor == 0x13B5
+            || info.vendor == 0x106B)
+    {
+        return "Arm".to_string();
+    }
+
+    match info.device_type {
+        wgpu::DeviceType::IntegratedGpu => {
+            if unified_memory == Some(true) && lower_name.contains("apple") {
+                "Arm".to_string()
+            } else {
+                "Integrated".to_string()
+            }
+        }
+        wgpu::DeviceType::DiscreteGpu => "Discrete".to_string(),
+        wgpu::DeviceType::VirtualGpu => "Virtual".to_string(),
+        wgpu::DeviceType::Cpu => "CPU".to_string(),
+        wgpu::DeviceType::Other => "Other".to_string(),
+    }
+}
+
+fn infer_brand(vendor_id: u32, name: &str) -> Option<String> {
+    let lower = name.to_ascii_lowercase();
+
+    let from_vendor = match vendor_id {
+        0x10DE => Some("NVIDIA"),
+        0x1002 | 0x1022 => Some("AMD"),
+        0x8086 => Some("Intel"),
+        0x106B => Some("Apple"),
+        0x13B5 => Some("ARM"),
+        _ => None,
+    };
+
+    from_vendor
+        .map(str::to_string)
+        .or_else(|| {
+            if lower.contains("nvidia") {
+                Some("NVIDIA".to_string())
+            } else if lower.contains("amd") || lower.contains("radeon") {
+                Some("AMD".to_string())
+            } else if lower.contains("intel") {
+                Some("Intel".to_string())
+            } else if lower.contains("apple") {
+                Some("Apple".to_string())
+            } else if lower.contains("mali") || lower.contains("arm") {
+                Some("ARM".to_string())
+            } else if lower.contains("adreno") || lower.contains("qualcomm") {
+                Some("Qualcomm".to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn some_if_nonzero(v: u32) -> Option<u32> {
+    if v == 0 { None } else { Some(v) }
+}
+
+fn non_empty(s: &str) -> Option<String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct PlatformGpuProbe {
+    vram_bytes: Option<u64>,
+    unified_memory: Option<bool>,
+}
+
+fn platform_gpu_probe(vendor_id: u32, device_id: u32, adapter_name: &str) -> PlatformGpuProbe {
+    #[cfg(target_os = "windows")]
+    {
+        return platform::windows_gpu_probe(vendor_id, device_id, adapter_name).unwrap_or_default();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return platform::macos_gpu_probe(adapter_name).unwrap_or_default();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return platform::linux_gpu_probe_vulkan(vendor_id, device_id, adapter_name).unwrap_or_default();
+    }
+
+    #[allow(unreachable_code)]
+    PlatformGpuProbe::default()
 }

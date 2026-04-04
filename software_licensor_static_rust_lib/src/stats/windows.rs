@@ -64,6 +64,7 @@ pub fn collect() -> Stats {
         users_language,
         display_language,
         computer_name,
+        gpu_info: super::detect_primary_gpu_info().await
     }
 }
 
@@ -422,4 +423,46 @@ fn smbios_baseboard_serial() -> Option<String> {
         }
     }
     None
+}
+
+// GPU Stuff
+pub fn windows_gpu_probe(
+    vendor_id: u32,
+    device_id: u32,
+    adapter_name: &str,
+) -> Option<PlatformGpuProbe> {
+    use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1};
+
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+
+        let mut index = 0;
+        loop {
+            let adapter: IDXGIAdapter1 = match factory.EnumAdapters1(index) {
+                Ok(a) => a,
+                Err(_) => break,
+            };
+            index += 1;
+
+            let desc = adapter.GetDesc1().ok()?;
+            let desc_name = utf16_array_to_string(&desc.Description);
+
+            let name_match = !adapter_name.is_empty() && desc_name.eq_ignore_ascii_case(adapter_name);
+            let id_match = desc.VendorId == vendor_id && desc.DeviceId == device_id;
+
+            if name_match || id_match {
+                return Some(PlatformGpuProbe {
+                    vram_bytes: Some(desc.DedicatedVideoMemory as u64),
+                    unified_memory: Some(desc.DedicatedVideoMemory == 0),
+                });
+            }
+        }
+    }
+
+    None
+}
+
+fn utf16_array_to_string(buf: &[u16]) -> String {
+    let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..end]).trim().to_string()
 }

@@ -236,7 +236,7 @@ async unsafe fn update_machine_info(save_system_stats: bool) {
 
     // Safety: `current_stats` is none when save_system_stats is false.
     unsafe {
-        let current_stats = get_machine_stats(save_system_stats);
+        let current_stats = get_machine_stats(save_system_stats).await;
         assert!(
             (current_stats.is_none() && !save_system_stats) || 
             (current_stats.is_some() && save_system_stats), 

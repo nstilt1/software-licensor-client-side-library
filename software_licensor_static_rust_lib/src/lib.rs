@@ -235,7 +235,7 @@ pub extern "C" fn update_machine_info(
 
         // Safety: Stats are only `Some` if save_system_stats is true.
         let current_stats = unsafe {
-            crate::stats::get_machine_stats(save_system_stats)
+            crate::stats::get_machine_stats(save_system_stats).await
         };
 
         if hw_info_file.machine_stats.ne(&current_stats) {

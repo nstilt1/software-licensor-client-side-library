@@ -38,7 +38,7 @@ pub fn get_device_id() -> String {
         &board_id,
     ])
 }
-pub fn collect() -> Stats {
+pub async fn collect() -> Stats {
     let cpu_vendor = sysctl_string("machdep.cpu.vendor").unwrap_or_default();
     let cpu_model = sysctl_string("machdep.cpu.brand_string")
         .or_else(|| sysctl_string("hw.model"))
@@ -67,6 +67,7 @@ pub fn collect() -> Stats {
         users_language,
         display_language,
         computer_name,
+        gpu_info: super::detect_primary_gpu_info().await
     }
 }
 
@@ -165,4 +166,19 @@ pub fn computer_name() -> Option<String> {
     } else {
         Some(s)
     }
+}
+
+// GPU Stuff
+pub fn macos_gpu_probe(adapter_name: &str) -> Option<PlatformGpuProbe> {
+    let devices = metal::Device::all();
+
+    let device = devices
+        .into_iter()
+        .find(|d| d.name() == adapter_name)
+        .or_else(|| metal::Device::all().into_iter().next())?;
+
+    Some(PlatformGpuProbe {
+        vram_bytes: Some(device.recommended_max_working_set_size()),
+        unified_memory: Some(device.has_unified_memory()),
+    })
 }

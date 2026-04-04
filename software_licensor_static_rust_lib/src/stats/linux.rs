@@ -35,7 +35,7 @@ pub fn get_device_id() -> String {
     ])
 }
 
-pub fn collect() -> Stats {
+pub async fn collect() -> Stats {
     let cpu_vendor = parse_cpuinfo_value("vendor_id")
         .or_else(|| parse_cpuinfo_value("CPU implementer"))
         .unwrap_or_default();
@@ -62,6 +62,7 @@ pub fn collect() -> Stats {
         users_language,
         display_language,
         computer_name,
+        gpu_info: super::detect_primary_gpu_info().await
     }
 }
 
@@ -191,5 +192,68 @@ pub fn computer_name() -> Option<String> {
         None
     } else {
         Some(s)
+    }
+}
+
+// GPU STUFF
+pub fn linux_gpu_probe_vulkan(
+    vendor_id: u32,
+    device_id: u32,
+    adapter_name: &str,
+) -> Option<PlatformGpuProbe> {
+    use ash::vk;
+    use std::ffi::{CStr, CString};
+
+    unsafe {
+        let entry = ash::Entry::load().ok()?;
+
+        let app_name = CString::new("gpu_probe").ok()?;
+        let engine_name = CString::new("gpu_probe").ok()?;
+
+        let app_info = vk::ApplicationInfo::default()
+            .application_name(&app_name)
+            .engine_name(&engine_name)
+            .api_version(vk::make_api_version(0, 1, 0, 0));
+
+        let create_info = vk::InstanceCreateInfo::default().application_info(&app_info);
+
+        let instance = entry.create_instance(&create_info, None).ok()?;
+        let result = (|| {
+            let physical_devices = instance.enumerate_physical_devices().ok()?;
+
+            for physical_device in physical_devices {
+                let props = instance.get_physical_device_properties(physical_device);
+                let mem = instance.get_physical_device_memory_properties(physical_device);
+
+                let vk_name = CStr::from_ptr(props.device_name.as_ptr())
+                    .to_str()
+                    .ok()
+                    .unwrap_or_default();
+
+                let id_match = props.vendor_id == vendor_id && props.device_id == device_id;
+                let name_match =
+                    !adapter_name.is_empty() && vk_name.eq_ignore_ascii_case(adapter_name);
+
+                if id_match || name_match {
+                    let mut device_local_bytes: u64 = 0;
+
+                    for heap in mem.memory_heaps[..mem.memory_heap_count as usize].iter() {
+                        if heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL) {
+                            device_local_bytes = device_local_bytes.saturating_add(heap.size);
+                        }
+                    }
+
+                    return Some(PlatformGpuProbe {
+                        vram_bytes: Some(device_local_bytes),
+                        unified_memory: Some(device_local_bytes == 0),
+                    });
+                }
+            }
+
+            None
+        })();
+
+        instance.destroy_instance(None);
+        result
     }
 }

@@ -156,7 +156,7 @@ pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage
     log_info!("Getting or initializing hw info file");
     let path = get_machine_stats_path()?;
 
-    if path.exists() {
+    let mut result = if path.exists() {
         log_info!("hw info file exists, trying to read it");
         let mut file = File::open(path)?;
         let mut buffer = Vec::new();
@@ -165,14 +165,14 @@ pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage
             Ok(stats) => {
                 log_info!("Successfully decoded hw info file");
 
-                Ok(stats)
+                stats
             },
             Err(_) => {
                 log_info!("Failed to decode hw info file, initializing a new one");
                 let hw_info_storage = ClientSideHwInfoStorage {
                     machine_stats: None,
                 };
-                Ok(hw_info_storage)
+                hw_info_storage
             }
         }
     } else {
@@ -180,8 +180,28 @@ pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage
         let hw_info_storage = ClientSideHwInfoStorage {
             machine_stats: None,
         };
-        Ok(hw_info_storage)
+        hw_info_storage
+    };
+    let save_system_stats = result.machine_stats.is_some();
+    
+    // Safety: This is safe because we only read the stats if 
+    // `save_system_stats` is true, which means that the stats 
+    // were successfully read from the file and are valid. If 
+    // `save_system_stats` is false, then we don't read the 
+    // stats and just initialize them, so there is no risk of 
+    // reading invalid stats.
+    let current_stats = unsafe {
+        crate::stats::get_machine_stats(save_system_stats).await
+    };
+    if result.machine_stats.ne(&current_stats) {
+        log_info!("Machine stats have changed since last save, updating hw info file");
+        result.machine_stats = current_stats;
+        save_hw_info_file(&result)?;
+    } else {
+        log_info!("Machine stats have not changed since last save");
     }
+    
+    Ok(result)
 }
 
 /// Saves the license file to the path (if the permissions are correct).
