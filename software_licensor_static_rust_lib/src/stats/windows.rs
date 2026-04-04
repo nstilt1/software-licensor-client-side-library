@@ -45,7 +45,7 @@ pub fn get_language() -> Language {
     }
 }
 
-pub fn collect() -> Stats {
+pub async fn collect() -> Stats {
     let cpu_vendor = cpu_vendor().unwrap_or_default();
     let cpu_model = cpu_model().unwrap_or_default();
     let ram_mb = ram_mb().unwrap_or(0);
@@ -103,7 +103,7 @@ fn display_language_name() -> Option<String> {
     }
 }
 
-fn computer_name() -> Option<String> {
+pub fn computer_name() -> Option<String> {
     let mut size = 0u32;
     unsafe {
         GetComputerNameExW(ComputerNamePhysicalDnsHostname, null_mut(), &mut size);
