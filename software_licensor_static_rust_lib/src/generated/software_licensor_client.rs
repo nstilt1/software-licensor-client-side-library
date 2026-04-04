@@ -263,6 +263,17 @@ pub struct LicenseKeyFile {
     #[prost(uint32, optional, tag = "41")]
     pub current_machine_limit: ::core::option::Option<u32>,
 }
+/// License Error and Version of the software
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LicenseErrorsAndVersions {
+    /// the licensing error code
+    #[prost(uint32, tag = "1")]
+    pub licensing_error: u32,
+    /// the product version so that updates can be checked on while the products
+    /// are still locked
+    #[prost(string, tag = "5")]
+    pub version: ::prost::alloc::string::String,
+}
 /// The license activation response.
 ///
 /// Note: the response could be of a different format—either a number as a string
@@ -286,6 +297,12 @@ pub struct LicenseActivationResponse {
     pub licensing_errors: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         u32,
+    >,
+    /// map of product ids to (licensing error, version)
+    #[prost(map = "string, message", tag = "12")]
+    pub license_errors_and_versions: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        LicenseErrorsAndVersions,
     >,
     /// map of product ids to key file signature
     #[prost(map = "string, bytes", tag = "5")]

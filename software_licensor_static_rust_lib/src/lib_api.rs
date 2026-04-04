@@ -75,6 +75,7 @@ pub struct LicenseStatus {
     pub company_name: String,
     pub product_ids_and_pubkeys: HashMap<String, String>,
     pub send_computer_name: bool,
+    pub preferred_product_id_for_version_check: String,
 }
 
 impl LicenseStatus {
@@ -87,7 +88,7 @@ impl LicenseStatus {
     /// `send_computer_name` is here to determine whether the store wants to 
     /// force the clients to send their computer name to the cloud. This will be 
     /// used for the user to view which computers are activated on their license.
-    pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>, send_computer_name: bool) -> (Self, LicenseData) {
+    pub async fn new(store_id: &str, company_name: &str, product_ids_and_pubkeys: HashMap<String, String>, send_computer_name: bool, preferred_product_id_for_version_check: &str) -> (Self, LicenseData) {
         #[cfg(feature = "logging")]
         {
             use crate::inner::init_logger;
@@ -106,6 +107,7 @@ impl LicenseStatus {
             company_name: company_name.to_string(),
             product_ids_and_pubkeys,
             send_computer_name,
+            preferred_product_id_for_version_check: preferred_product_id_for_version_check.to_string(),
         };
         let license_data = match result.check_license(true).await {
             Ok((_is_unlocked, license_data, _license_code)) => license_data,
@@ -120,8 +122,8 @@ impl LicenseStatus {
     /// is a quick check that can be used to determine if the license is unlocked.
     #[inline(always)]
     pub async fn is_unlocked(&self) -> bool {
-        log_info!("Running is_unlocked check");
-        check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id.clone(), self.send_computer_name).await.is_ok()
+        log_info!("Running is_unlocked check ======================");
+        check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id.clone(), self.send_computer_name, &self.preferred_product_id_for_version_check).await.is_ok()
     }
     /// Gets the error message corresponding to the license status code, using 
     /// the appropriate language based on the machine's stats. This is a user-friendly
@@ -136,8 +138,8 @@ impl LicenseStatus {
     /// Err((error_message, license_code)) with an error message if the license is not valid.
     #[inline(always)]
     pub async fn check_license(&self, should_check_cloud: bool) -> Result<(bool, LicenseData, String), (bool, LicenseData)> {
-        log_info!("Running check_license(should_check_cloud = {})", should_check_cloud);
-        let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone(), self.send_computer_name).await {
+        log_info!("Running check_license(should_check_cloud = {} ==================)", should_check_cloud);
+        let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone(), self.send_computer_name, &self.preferred_product_id_for_version_check).await {
             Ok(v) => (v, true),
             Err(e) => {
                 let license_data = match e {
@@ -157,8 +159,8 @@ impl LicenseStatus {
     /// Reads the reply from the webserver after attempting to activate the license.
     #[inline(always)]
     pub async fn read_reply_from_webserver(&self, license_code: &str, save_system_stats: bool) -> Result<(bool, LicenseData), (bool, LicenseData)> {
-        log_info!("Running read_reply_from_webserver");
-        let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats, self.send_computer_name).await {
+        log_info!("Running read_reply_from_webserver ==================");
+        let result = match read_reply_from_webserver(&self.company_name, &self.store_id, license_code, &self.product_ids_and_pubkeys, save_system_stats, self.send_computer_name, &self.preferred_product_id_for_version_check).await {
             Ok(v) => v,
             Err(e) => return Err(e),
         };
@@ -250,7 +252,7 @@ async unsafe fn update_machine_info(save_system_stats: bool) {
 
 /// Reads the reply from the webserver after attempting to activate the license.
 #[inline(always)]
-async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool, send_computer_name: bool) -> Result<(bool, LicenseData), (bool, LicenseData)> {
+async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_code: &str, product_ids_and_pubkeys: &HashMap<String, String>, save_system_stats: bool, send_computer_name: bool, preferred_product_id_for_version_check: &str) -> Result<(bool, LicenseData), (bool, LicenseData)> {
     // Safety: This function is called while using save_system_stats.
     unsafe {
         update_machine_info(save_system_stats).await;
@@ -291,6 +293,7 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
         false,
         store_id.to_string(),
         send_computer_name,
+        preferred_product_id_for_version_check,
     ).await {
         Ok(v) => return Ok((true, v)),
         Err(e) => {

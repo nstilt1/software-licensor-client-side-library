@@ -4,34 +4,34 @@ use crate::{LicenseData, status_messages::get_status_message_from_code};
 /// Implements some error types that correspond to error codes.
 macro_rules! impl_error_codes {
     ($(($variant:ident, $error_code:literal)), *) => {
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         pub enum LicensingError {
             $(
-                $variant(String),
+                $variant((String, String)),
             )*
             UnknownError((u32, String)),
         }
 
-        impl From<(u32, String)> for LicensingError {
-            fn from((error_code, license_code): (u32, String)) -> LicensingError {
+        impl From<(u32, &str, &str)> for LicensingError {
+            fn from((error_code, license_code, version): (u32, &str, &str)) -> LicensingError {
                 match error_code {
                     $(
-                        $error_code => {LicensingError::$variant(license_code).into()}
+                        $error_code => {LicensingError::$variant((license_code.into(), version.to_string())).into()}
                     )*
-                    _ => LicensingError::UnknownError((error_code, license_code)).into()
+                    _ => LicensingError::UnknownError((error_code, license_code.into())).into()
                 }
             }
         }
 
         impl LicensingError {
             #[inline(always)]
-            pub fn get_error_and_license_codes(&self) -> (u32, &str) {
+            pub fn get_error_and_license_codes_and_version(&self) -> (u32, &str, &str) {
                 match self {
                     $(
-                        Self::$variant(license_code) => ($error_code, &license_code),
+                        Self::$variant((license_code, version)) => ($error_code, &license_code, &version),
                     )*
                     Self::UnknownError((error_code, license_code)) => {
-                        (*error_code, &license_code)
+                        (*error_code, &license_code, "0")
                     }
                 }
             }
@@ -41,7 +41,7 @@ macro_rules! impl_error_codes {
 
 impl std::fmt::Display for LicensingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (error_code, _license_code) = self.get_error_and_license_codes();
+        let (error_code, _license_code, _version) = self.get_error_and_license_codes_and_version();
         let message = get_status_message_from_code(error_code as i32);
         f.write_str(&format!("Error {}: {}", error_code.ilog2(), message))
     }
@@ -102,13 +102,13 @@ impl std::fmt::Display for Error {
 }
 
 impl Error {
-    pub(crate) fn get_license_code_and_error_code(&self) -> (&str, u32) {
+    pub(crate) fn get_license_code_and_error_code_and_version(&self) -> (&str, u32, &str) {
         match self {
             Self::LicensingError(e) => {
-                let (error_code, license_code) = e.get_error_and_license_codes();
-                (license_code, error_code)
+                let (error_code, license_code, version) = e.get_error_and_license_codes_and_version();
+                (license_code, error_code, version)
             },
-            _ => ("", 0),
+            _ => ("", 0, "0"),
         }
     }
 }

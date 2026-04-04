@@ -125,13 +125,13 @@ impl LicenseData {
             "Error", 
             "Error", 
             message, 
-            "Error",
+            license_code,
             None,
             None
         )
     }
     fn error(error: &Error) -> Self {
-        let (license_code, error_code) = error.get_license_code_and_error_code();
+        let (license_code, error_code, version) = error.get_license_code_and_error_code_and_version();
         let error_message = status_messages::get_status_message_from_code(error_code as i32);
         Self::new(
             error_code as i32,
@@ -139,7 +139,7 @@ impl LicenseData {
             "Error",
             "Error",
             "Error",
-            "0",
+            version,
             &error_message,
             license_code,
             None,
@@ -178,14 +178,14 @@ impl LicenseData {
         )
     }
     fn licensing_error(licensing_error: &LicensingError) -> Self {
-        let (error_code, license_code) = licensing_error.get_error_and_license_codes();
+        let (error_code, license_code, version) = licensing_error.get_error_and_license_codes_and_version();
         Self::new(
             error_code as i32, 
             "", 
             "", 
             "", 
             "", 
-            "", 
+            version, 
             licensing_error.to_string().as_str(), 
             &license_code, 
             None, 
@@ -282,7 +282,15 @@ pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
 #[no_mangle]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
-pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, license_code: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+pub extern "C" fn read_reply_from_webserver(
+    company_name: *const c_char, 
+    store_id: *const c_char, 
+    machine_id: *const c_char, 
+    license_code: *const c_char, 
+    product_ids_and_pubkeys: *const *const c_char, 
+    len: c_int,
+    preferred_product_id_for_version_check: *const c_char
+) -> *mut LicenseData {
     #[cfg(feature = "logging")]
     {
         use crate::inner::init_logger;
@@ -298,6 +306,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
     let license_code_str = parse_c_char!(license_code, "Failed to parse license code", true);
+    let preferred_product_id_for_version_check_str = parse_c_char!(preferred_product_id_for_version_check, "Failed to parse preferred product ID for version check", true);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
     
@@ -343,7 +352,7 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
                 }
             }
         };
-        match check_key_file_async(Some(&mut license_file), store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string(), false).await {
+        match check_key_file_async(Some(&mut license_file), store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
             Ok(v) => return box_out!(v),
             Err(e) => {
                 log_error!("There was an error when checking the license after activation: {}", e);
@@ -374,7 +383,14 @@ pub extern "C" fn read_reply_from_webserver(company_name: *const c_char, store_i
 #[no_mangle]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
-pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+pub extern "C" fn check_license(
+    company_name: *const c_char, 
+    store_id: *const c_char, 
+    machine_id: *const c_char, 
+    product_ids_and_pubkeys: *const *const c_char, 
+    len: c_int,
+    preferred_product_id_for_version_check: *const c_char,
+) -> *mut LicenseData {
     #[cfg(feature = "logging")]
     {
         use crate::inner::init_logger;
@@ -388,6 +404,7 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
+    let preferred_product_id_for_version_check_str = parse_c_char!(preferred_product_id_for_version_check, "Failed to parse preferred product ID for version check", true);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
     
@@ -415,13 +432,13 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true, store_id_str.to_string(), false).await {
+        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
             Ok(v) => {
                 box_out!(v)
             },
             Err(e) => {
                 log_error!("There was an error when checking the license: {}", e);
-                log_error!("Error message for code: {}", status_messages::get_status_message_from_code(e.get_license_code_and_error_code().1 as i32));
+                log_error!("Error message for code: {}", status_messages::get_status_message_from_code(e.get_license_code_and_error_code_and_version().1 as i32));
                 match e {
                     Error::LicensingError(v) => {
                         let r = LicenseData::licensing_error(&v);
@@ -446,7 +463,14 @@ pub extern "C" fn check_license(company_name: *const c_char, store_id: *const c_
 #[no_mangle]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
-pub extern "C" fn check_license_no_api_request(company_name: *const c_char, store_id: *const c_char, machine_id: *const c_char, product_ids_and_pubkeys: *const *const c_char, len: c_int) -> *mut LicenseData {
+pub extern "C" fn check_license_no_api_request(
+    company_name: *const c_char, 
+    store_id: *const c_char, 
+    machine_id: *const c_char, 
+    product_ids_and_pubkeys: *const *const c_char, 
+    len: c_int,
+    preferred_product_id_for_version_check: *const c_char,
+) -> *mut LicenseData {
     #[cfg(feature = "logging")]
     {
         use crate::inner::init_logger;
@@ -460,7 +484,8 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
     let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
-
+    let preferred_product_id_for_version_check_str = parse_c_char!(preferred_product_id_for_version_check, "Failed to parse preferred product ID for version check", true);
+    
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
     
     let mut product_ids_and_pubkeys_vec: Vec<&str> = Vec::with_capacity(len as usize);
@@ -483,7 +508,7 @@ pub extern "C" fn check_license_no_api_request(company_name: *const c_char, stor
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string(), false).await {
+        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
             Ok(v) => {
                 return box_out!(v)
             },

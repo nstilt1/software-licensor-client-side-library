@@ -89,13 +89,23 @@ pub(crate) async fn activate_license_request(
         }
     }
 
-    let mut all_product_ids = product_id_hashmap.keys().cloned().collect::<HashSet<String>>();
-    for (k, v) in &license_file.license_data {
-        all_product_ids.insert(k.clone());
-    }
+    let mut all_product_ids = product_id_hashmap
+        .keys()
+        .cloned()
+        .collect::<HashSet<String>>();
+
+    license_file.license_data
+        .get(&truncated_store_id)
+        .iter()
+        .for_each(|store_data| {
+            store_data.license_activation_response.as_ref().inspect(|response| {
+                all_product_ids.extend(response.key_file_signatures.keys().cloned());
+                all_product_ids.extend(response.licensing_errors.keys().cloned());
+            });
+        });
     if all_product_ids.is_empty() {
         log_error!("There were no product IDs provided");
-        return Err(LicensingError::NoLicenseFound( "".into()).into())
+        return Err(LicensingError::NoLicenseFound( ("".into(), "0".into())).into())
     }
 
     let mut hws = hw_info.machine_stats;
@@ -225,7 +235,7 @@ pub(crate) async fn activate_license_request(
             Ok(v) => {
                 // there was a licensing error with the request. These come in the
                 // form of powers of 2 
-                return Err(Error::LicensingError((v, license_code.to_string()).into()))
+                return Err(Error::LicensingError((v, license_code, "0").into()))
             },
             Err(_) => {
                 // there was a general error with the request

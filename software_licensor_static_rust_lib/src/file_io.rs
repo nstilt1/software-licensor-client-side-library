@@ -1,3 +1,4 @@
+use core::error;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::{self, File, OpenOptions};
@@ -11,7 +12,7 @@ use prost::Message;
 use sha2::Digest;
 
 use crate::error::{Error, LicensingError};
-use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseKeyFile};
+use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSideHwInfoStorage, LicenseActivationResponse, LicenseErrorsAndVersions, LicenseKeyFile};
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::{LicenseData, log_error, log_info};
 use crate::generated::software_licensor_client::LicenseData as LicenseDataProto;
@@ -237,6 +238,43 @@ pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Er
     Ok(())
 }
 
+struct LicensingErrors {
+    error_code: i32,
+    product_version: String,
+    error_code_to_version: HashMap<i32, String>,
+    product_id_to_version: HashMap<String, String>,
+    error_codes: Vec<(i32, String)>,
+}
+
+impl LicensingErrors {
+    fn init(errors_and_versions: &HashMap<String, LicenseErrorsAndVersions>) -> Self {
+        let mut error_code_to_version = HashMap::with_capacity(errors_and_versions.len());
+        let mut product_id_to_version = HashMap::with_capacity(errors_and_versions.len());
+        let mut error_codes = Vec::with_capacity(errors_and_versions.len());
+        for (product_id, errors_and_versions) in errors_and_versions {
+            let error_code = errors_and_versions.licensing_error;
+            let version = &errors_and_versions.version;
+            error_code_to_version.insert(error_code as i32, version.clone());
+            product_id_to_version.insert(product_id.clone(), version.clone());
+            error_codes.push((error_code as i32, version.clone()));
+        }
+        error_codes.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        Self {
+            error_code: 0,
+            product_version: "0".into(),
+            error_code_to_version,
+            product_id_to_version,
+            error_codes,
+         }
+    }
+    fn get_strings_error_code(&self, error_code: i32) -> Option<&String> {
+        self.error_code_to_version.get(&error_code)
+    }
+    fn get_version_of_product(&self, product_id: &str) -> Option<&String> {
+        self.product_id_to_version.get(product_id)
+    }
+}
+
 /// Returns a `LicenseKeyFile` where `message_code = 1` is prioritized, but
 /// are otherwise sorted by the `check_back_timestamp`, prioritizing higher 
 /// timestamps. This allows for multiple product IDs to be set for when there 
@@ -246,17 +284,17 @@ pub(crate) fn save_hw_info_file(data: &ClientSideHwInfoStorage) -> Result<(), Er
 /// 
 /// This function can only result in an `Error::LicensingError`, so the error number can be returned to the external code.
 #[inline(always)]
-pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_ids: &Vec<&String>, mut api_key: String) -> Result<(LicenseKeyFile, Signature, LicenseActivationResponse), LicensingError> {
+pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_ids: &Vec<&String>, mut api_key: String, preferred_product_id_for_version_check: &str) -> Result<(LicenseKeyFile, Signature, LicenseActivationResponse), LicensingError> {
     log_info!("Getting latest key file for product ids: {:?}", product_ids);
     api_key.truncate(20);
     let license_data = match data_storage.license_data.get(&api_key) {
         Some(v) => v,
-        None => return Err(LicensingError::NoLicenseFound("".into()))
+        None => return Err(LicensingError::NoLicenseFound(("".into(), "".into()).into()))
     };
     
     let license_activation_response = match &license_data.license_activation_response {
         Some(v) => v,
-        None => return Err(LicensingError::NoLicenseFound("".into()))
+        None => return Err(LicensingError::NoLicenseFound(("".into(), "".into())))
     };
     // get all license key files for the valid product ids. These product ids 
     // could include bundled products as opposed to just the individual product
@@ -275,42 +313,51 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
             Some(v) => v,
             None => {
                 log_error!("Failed to find signature for product id: {}", product_id);
-                return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+                return Err(LicensingError::NoLicenseFound((key_file.license_code.clone(), key_file.product_version.to_string()).into()))
             }
         };
         let signature: Signature = match Signature::from_bytes(sig_bytes.as_slice().into()) {
             Ok(v) => v,
             Err(_) => {
                 log_error!("Failed to create signature from bytes");
-                return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+                return Err(LicensingError::NoLicenseFound((key_file.license_code.clone(), key_file.product_version.to_string()).into()))
             }
         };
         return Ok((key_file.clone(), signature, license_activation_response.clone()))
     }
     if found_key_files.is_empty() {
-        let errors = &license_activation_response.licensing_errors;
-        let mut error_codes = Vec::with_capacity(errors.len());
-        errors.iter().for_each(|(k,v)| {
-            if product_ids.contains(&k) {
-                error_codes.push(*v);
-            }
-        });
-        log_error!("No key files found for the product ids. Licensing error codes for the product ids: {:?}", error_codes);
-        if error_codes.is_empty() {
-
-            return Err(LicensingError::NoLicenseFound(license_data.license_code.clone()))
+        let errors = &license_activation_response.license_errors_and_versions;
+        let mut error_codes = LicensingErrors::init(errors);
+        log_error!("No key files found for the product ids. Licensing error codes for the product ids: {:?}", error_codes.error_code_to_version);
+        if error_codes.error_code_to_version.is_empty() {
+            log_info!("No license errors found for this license, but also no key files found.");
+            return Err(LicensingError::NoLicenseFound((license_data.license_code.clone(), "0".into()).into()))
         }
         // prioritizing specific licensing errors over others
-        if error_codes.contains(&4) { // machine limit reached
-            return Err(LicensingError::MachineLimitReached(license_data.license_code.clone()))
+        if let Some(v) = error_codes.get_strings_error_code(4) {
+            log_info!("Machine limit reached for this license.");
+            // machine limit reached
+            return Err(LicensingError::MachineLimitReached((license_data.license_code.clone(), error_codes.get_version_of_product(preferred_product_id_for_version_check).unwrap_or(&"0".to_string()).to_string())).into())
         }
-        if error_codes.contains(&16) { // license no longer active
-            return Err(LicensingError::LicenseNoLongerActive(license_data.license_code.clone()))
+        if let Some(v) = error_codes.get_strings_error_code(16) {
+            log_info!("License is no longer active.");
+            return Err(LicensingError::LicenseNoLongerActive((license_data.license_code.clone(), error_codes.get_version_of_product(preferred_product_id_for_version_check).unwrap_or(&"0".to_string()).to_string()).into()))
         }
-        if error_codes.contains(&8) { // trial ended
-            return Err(LicensingError::TrialEnded(license_data.license_code.clone()))
+        if let Some(v) = error_codes.get_strings_error_code(8) {
+            log_info!("Trial has ended for this license.");
+            return Err(LicensingError::TrialEnded((license_data.license_code.clone(), error_codes.get_version_of_product(preferred_product_id_for_version_check).unwrap_or(&"0".to_string()).to_string()).into()))
         }
-        return Err(LicensingError::from((error_codes[0], license_data.license_code.clone())))
+        log_info!("Returning most relevant licensing error code for this license: {}", error_codes.error_codes[0].0);
+        return Err(LicensingError::from(
+            (
+                error_codes.error_codes[0].0 as u32, 
+                license_data.license_code.as_str(), 
+                error_codes
+                    .get_version_of_product(preferred_product_id_for_version_check)
+                    .unwrap_or(&"0".to_string())
+                    .as_str()
+            )
+        ))
     }
     found_key_files.sort_unstable_by(|a, b| {
         let a_success = a.message_code == 1;
@@ -326,11 +373,11 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
     let product_id = &key_file.product_id;
     let sig_bytes = match license_activation_response.key_file_signatures.get(product_id) {
         Some(v) => v,
-        None => return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+        None => return Err(LicensingError::NoLicenseFound((key_file.license_code.clone(), "0".into())))
     };
     let signature: Signature = match Signature::from_bytes(sig_bytes.as_slice().into()) {
         Ok(v) => v,
-        Err(_) => return Err(LicensingError::NoLicenseFound(key_file.license_code.clone()))
+        Err(_) => return Err(LicensingError::NoLicenseFound((key_file.license_code.clone(), "0".into())))
     };
     Ok((key_file.clone(), signature, license_activation_response.clone()))
 }
@@ -399,6 +446,7 @@ pub(crate) async fn check_key_file_async(
     should_send_request: bool, 
     api_key: String,
     send_computer_name: bool,
+    preferred_product_id_for_version_check: &str,
 ) -> Result<LicenseData, Error> {
     let mut license_file = match license_file {
         Some(file) => file,
@@ -419,21 +467,21 @@ pub(crate) async fn check_key_file_async(
         None => {
             log_error!("API key not found in license file. API Key: {}", trimmed_api_key);
             log_error!("License data keys: {:?}", license_file.license_data.keys());
-            return Err(Error::LicensingError((2, "".to_string()).into()))
+            return Err(Error::LicensingError((2u32, "", "0").into()))
         }
     };
     let license_code: String = match license_data.license_code.len() < 16 {
         true => {
             log_error!("License code in license file is less than 16 chars: {}", license_data.license_code);
-            return Err(Error::LicensingError((2, license_data.license_code.clone()).into()))
+            return Err(Error::LicensingError((2u32, license_data.license_code.as_str(), "0").into()))
         },
         false => license_data.license_code.clone()
     }.to_owned();
     let product_ids: Vec<&String> = product_ids_and_pubkeys.keys().collect();
-    let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
+    let (mut key_file, mut signature, mut license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone(), preferred_product_id_for_version_check) {
         Ok(v) => v,
         Err(licensing_error) => {
-            log_error!("Failed to get latest key file: {:?}", licensing_error.get_error_and_license_codes());
+            log_error!("Failed to get latest key file: {:?}", licensing_error.get_error_and_license_codes_and_version());
             return Err(Error::LicensingError(licensing_error))
         }
     };
@@ -456,11 +504,11 @@ pub(crate) async fn check_key_file_async(
                 return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
             }
         }
-        (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
+        (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone(), preferred_product_id_for_version_check) {
             Ok(v) => v,
             Err(licensing_error) =>  {
                 log_error!("Failed to get latest key file after sending request");
-                log_error!("Licensing error: {:?}", licensing_error.get_error_and_license_codes().0);
+                log_error!("Licensing error: {:?}", licensing_error.get_error_and_license_codes_and_version().0);
                 return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.post_expiration_error_code as i32))
             }
         };
@@ -485,9 +533,9 @@ pub(crate) async fn check_key_file_async(
         if key_file.expiration_timestamp < now {
             log_error!("Key file expired at {}, now is {}", key_file.expiration_timestamp, now);
             let err = if key_file.post_expiration_error_code == 16 {
-                LicensingError::LicenseNoLongerActive(license_code)
+                LicensingError::LicenseNoLongerActive((license_code.to_string(), key_file.product_version))
             } else {
-                LicensingError::TrialEnded(license_code)
+                LicensingError::TrialEnded((license_code, key_file.product_version))
             };
             return Ok(LicenseData::error(&Error::LicensingError(err)))
         }
@@ -496,7 +544,7 @@ pub(crate) async fn check_key_file_async(
         // send request
         log_info!("Key file check back timestamp is {}, now is {}, sending request to check for an update", key_file.check_back_timestamp, now);
         if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file, send_computer_name).await {
-            (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone()) {
+            (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone(), preferred_product_id_for_version_check) {
                 Ok(v) => v,
                 Err(licensing_error) => {
                     log_error!("activate_license_request failed when check back timestmap was less than now");
@@ -510,7 +558,7 @@ pub(crate) async fn check_key_file_async(
         log_error!("Machine ID does not match key file machine ID");
 
         remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
-        return Err(LicensingError::NoLicenseFound(license_code).into())
+        return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
     }
     
     // verify signature on the key file
@@ -518,14 +566,14 @@ pub(crate) async fn check_key_file_async(
         Some(v) => v,
         None => {
             log_error!("Product ID not found in public keys");
-            return Err(LicensingError::NoLicenseFound(license_code).into())
+            return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
         }
     };
     let decoded_pubkey = match BASE64_STANDARD.decode(pubkey_b64) {
         Ok(v) => v,
         Err(e) => {
             log_error!("Failed to decode public key: {}", e);
-            return Err(LicensingError::NoLicenseFound(license_code).into())
+            return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
         }
     };
 
@@ -535,7 +583,7 @@ pub(crate) async fn check_key_file_async(
         Err(e) => {
             log_error!("Failed to parse verifying key from developer supplied public key: {}", e);
             remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
-            return Err(LicensingError::NoLicenseFound(license_code).into())
+            return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
         }
     };
     match verifying_key.verify_digest(EcdsaDigest::new_with_prefix(bytes), &signature) {
@@ -543,7 +591,7 @@ pub(crate) async fn check_key_file_async(
         Err(_) => {
             log_error!("Failed to verify signature on key file");
             remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
-            Err(LicensingError::NoLicenseFound(license_code).into())
+            Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
         }
     }
 }
@@ -568,7 +616,8 @@ mod tests {
             customer_last_name: "".to_string(), 
             customer_email: "".to_string(), 
             licensing_errors: HashMap::new(), 
-            key_file_signatures: HashMap::new()
+            key_file_signatures: HashMap::new(),
+            license_errors_and_versions: HashMap::new(),
         };
 
         let expired_product_id = "expired_product_id".to_string();
@@ -640,11 +689,11 @@ mod tests {
 
         license_data.license_activation_response = Some(license_response);
 
-        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone(), "ABCDEFGHIJKL".to_string()).expect("Possibly lacking file read permissions").0;
+        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone(), "ABCDEFGHIJKL".to_string(), &expired_product_id).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
 
-        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone(), "ABCDEFGHIJKL".to_string()).expect("Possibly lacking file read permissions").0;
+        let newest_key_file = get_latest_key_file(&data_storage, &product_ids.clone(), "ABCDEFGHIJKL".to_string(), &expired_product_id).expect("Possibly lacking file read permissions").0;
 
         assert_eq!("newest_product_id", newest_key_file.product_id);
     }
