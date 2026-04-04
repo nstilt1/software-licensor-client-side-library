@@ -43,7 +43,7 @@ void SoftwareLicensorStatus::update_machine_information(bool should_update) {
      */
 
     update_machine_info(
-      should_update,
+      should_update
     );
 }
 #endif

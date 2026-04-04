@@ -34,14 +34,14 @@ extern "C" {
      * Checks the locally stored license data, and performs an API request if
      * needed.
      */
-    LicenseData* check_license(const char* company_name, const char* store_id, const char* machine_id, const char** product_ids_and_pubkeys, int len);
+    LicenseData* check_license(const char* company_name, const char* store_id, const char* machine_id, const char** product_ids_and_pubkeys, int len, const char* preferred_product_id_for_version_check);
 
     /**
      * Submits an API request to the Software Licensor serverless endpoint
      * to grab the latest license information. Adds a 5 second delay to the
      * response to deter brute force attacks.
      */
-    LicenseData* read_reply_from_webserver(const char* company_name, const char* store_id, const char* machine_id, const char* license_code, const char** product_ids_and_pubkeys, int len);
+    LicenseData* read_reply_from_webserver(const char* company_name, const char* store_id, const char* machine_id, const char* license_code, const char** product_ids_and_pubkeys, int len, const char* preferred_product_id_for_version_check);
 
     /**
      * Checks the license file with a guarantee that it will not ping the
@@ -52,7 +52,7 @@ extern "C" {
      * This function is still asynchronous due to file system reads, but it
      * should be faster than `check_license` in some cases.
      */
-    LicenseData* check_license_no_api_request(const char* company_name, const char* store_id, const char* machine_id, const char** product_ids_and_pubkeys, int len);
+    LicenseData* check_license_no_api_request(const char* company_name, const char* store_id, const char* machine_id, const char** product_ids_and_pubkeys, int len,const char* preferred_product_id_for_version_check);
 
     /**
      * Frees the license data. This must be called for every instance of the
@@ -70,7 +70,7 @@ extern "C" {
      * determined using the JUCE library.
      */
     void update_machine_info(
-        bool save_system_stats,
+        bool save_system_stats
     );
 }
 
@@ -103,22 +103,41 @@ public:
     * individual products.
     */
     virtual std::vector<juce::String> getProductIdsAndPubkeys() = 0;
+    
+    /**
+    * The primary application's product ID. Used to extract the current cloud version 
+    * for your software. This is used because there could be multiple product IDs, but 
+    * this one is for fetching the version.
+    */
+    virtual juce::String getPrimaryProductId() = 0;
 
     inline void authorizeLicenseCodeWithWebServer(juce::String licenseCode) {
-        auto machine_id = juce::OnlineUnlockStatus::MachineIDUtilities::getUniqueMachineID();
+        auto machine_id    = juce::OnlineUnlockStatus::MachineIDUtilities::getUniqueMachineID();
         auto productIdsAndPubkeys = this->getProductIdsAndPubkeys();
+
+        // Keep these alive for the duration of the call
+        std::string company = this->getCompanyName().toStdString();
+        std::string store   = this->getStoreId().toStdString();
+        std::string mid     = machine_id.toStdString();
+        std::string lcode   = licenseCode.toStdString();
+        std::string primaryProductId = this->getPrimaryProductId().toStdString();
+
         std::vector<const char*> product_cstrings;
+        std::vector<std::string> product_strings; // owns the memory
+        product_strings.reserve(productIdsAndPubkeys.size());
         for (const auto& juceStr : productIdsAndPubkeys) {
-            product_cstrings.push_back(juceStr.getCharPointer().getAddress());
+            product_strings.push_back(juceStr.toStdString());
+            product_cstrings.push_back(product_strings.back().c_str());
         }
-        
+
         auto license_data = read_reply_from_webserver(
-            this->getCompanyName().toStdString().c_str(),
-            this->getStoreId().toStdString().c_str(),
-            machine_id.toStdString().c_str(),
-            licenseCode.toStdString().c_str(),
+            company.c_str(),
+            store.c_str(),
+            mid.c_str(),
+            lcode.c_str(),
             product_cstrings.data(),
-            product_cstrings.size()
+            static_cast<int>(product_cstrings.size()),
+            primaryProductId.c_str()
         );
 
         process_license_data(license_data);
@@ -135,18 +154,27 @@ public:
     inline juce::var check_license_with_potential_api_request() {
         auto machine_id = juce::OnlineUnlockStatus::MachineIDUtilities::getUniqueMachineID();
         auto productIdsAndPubkeys = this->getProductIdsAndPubkeys();
+        
+        std::string company = this->getCompanyName().toStdString();
+        std::string store = this->getStoreId().toStdString();
+        std::string mid = machine_id.toStdString();
+        std::string primaryProductId = this->getPrimaryProductId().toStdString();
 
         std::vector<const char*> product_cstrings;
+        std::vector<std::string> product_strings;
+        product_strings.reserve(productIdsAndPubkeys.size());
         for (const auto& juceStr : productIdsAndPubkeys) {
-            product_cstrings.push_back(juceStr.getCharPointer().getAddress());
+            product_strings.push_back(juceStr.toStdString());
+            product_cstrings.push_back(product_strings.back().c_str());
         }
 
         auto license_data = check_license(
-            this->getCompanyName().toStdString().c_str(),
-            this->getStoreId().toStdString().c_str(),
-            machine_id.toStdString().c_str(),
+            company.c_str(),
+            store.c_str(),
+            mid.c_str(),
             product_cstrings.data(),
-            product_cstrings.size()
+            static_cast<int>(product_cstrings.size()),
+            primaryProductId.c_str()
         );
 
         process_license_data(license_data);
@@ -161,18 +189,27 @@ public:
     inline juce::var check_license_with_no_api_request() {
         auto machine_id = juce::OnlineUnlockStatus::MachineIDUtilities::getUniqueMachineID();
         auto productIdsAndPubkeys = this->getProductIdsAndPubkeys();
+        
+        std::string company = this->getCompanyName().toStdString();
+        std::string store = this->getStoreId().toStdString();
+        std::string mid = machine_id.toStdString();
+        std::string primaryProductId = this->getPrimaryProductId().toStdString();
 
         std::vector<const char*> product_cstrings;
+        std::vector<std::string> product_strings;
+        product_strings.reserve(productIdsAndPubkeys.size());
         for (const auto& juceStr : productIdsAndPubkeys) {
-            product_cstrings.push_back(juceStr.getCharPointer().getAddress());
+            product_strings.push_back(juceStr.toStdString());
+            product_cstrings.push_back(product_strings.back().c_str());
         }
 
         auto license_data = check_license_no_api_request(
-            this->getCompanyName().toStdString().c_str(),
-            this->getStoreId().toStdString().c_str(),
-            machine_id.toStdString().c_str(),
+            company.c_str(),
+            store.c_str(),
+            mid.c_str(),
             product_cstrings.data(),
-            product_cstrings.size()
+            static_cast<int>(product_cstrings.size()),
+            primaryProductId.c_str()
         );
 
         process_license_data(license_data);
@@ -351,7 +388,7 @@ private:
             status.setProperty(licenseTypeProp, data->license_type, nullptr);
             status.setProperty(versionProp, data->version, nullptr);
             status.setProperty(errorProp, data->error_message, nullptr);
-            status.setProperty(licenseCodeProp, "", nullptr);
+            status.setProperty(licenseCodeProp, data->license_code, nullptr);
         }
         free_license_data(data);
     }
