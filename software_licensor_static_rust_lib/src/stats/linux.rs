@@ -3,6 +3,7 @@
 use super::*;
 use libc::{gethostname, sysinfo as libc_sysinfo, sysinfo as sysinfo_struct};
 use std::fs;
+use std::collections::BTreeSet;
 
 pub fn get_language() -> Language {
     let users_language = super::env_locale_fallback();
