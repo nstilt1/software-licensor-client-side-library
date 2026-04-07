@@ -18,6 +18,7 @@ use api::activate_license_request;
 use file_io::{check_key_file_async, get_or_init_hw_info_file, get_or_init_license_file, save_hw_info_file};
 use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyFile, Stats};
 use tokio::runtime::Runtime;
+pub use reqwest;
 
 mod api;
 mod generated;
