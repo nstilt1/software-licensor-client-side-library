@@ -17,22 +17,79 @@ use windows_sys::Win32::System::SystemInformation::{
     SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX,
 };
 
+fn machine_guid() -> Option<String> {
+    let subkey = wide(r"SOFTWARE\Microsoft\Cryptography");
+    let value_name = wide("MachineGuid");
+
+    let mut hkey: HKEY = null_mut();
+    let open = unsafe {
+        RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            subkey.as_ptr(),
+            0,
+            KEY_READ,
+            &mut hkey,
+        )
+    };
+    if open != 0 {
+        return None;
+    }
+
+    let mut data_type = 0u32;
+    let mut data_len = 0u32;
+
+    // First call: get the required buffer size
+    unsafe {
+        RegQueryValueExW(
+            hkey,
+            value_name.as_ptr(),
+            null(),
+            &mut data_type,
+            null_mut(),
+            &mut data_len,
+        )
+    };
+
+    if data_len == 0 {
+        unsafe { RegCloseKey(hkey) };
+        return None;
+    }
+
+    let mut buf = vec![0u16; (data_len / 2 + 1) as usize];
+    let query = unsafe {
+        RegQueryValueExW(
+            hkey,
+            value_name.as_ptr(),
+            null(),
+            &mut data_type,
+            buf.as_mut_ptr() as *mut u8,
+            &mut data_len,
+        )
+    };
+
+    unsafe { RegCloseKey(hkey) };
+
+    if query == 0 {
+        Some(utf16_buf_to_string(&buf))
+    } else {
+        None
+    }
+}
+
 #[inline(always)]
 pub fn get_device_id() -> String {
     let cpu_vendor = cpu_vendor().unwrap_or_default();
     let cpu_model = cpu_model().unwrap_or_default();
-    
     let smbios_uuid = smbios_system_uuid().unwrap_or_default();
-    let smbios_serial = smbios_system_serial().unwrap_or_default();
-    let board_serial = smbios_baseboard_serial().unwrap_or_default();
+    let machine_guid = machine_guid().unwrap_or_default();
 
     super::sha256_hex(&[
         "windows",
         &cpu_vendor,
         &cpu_model,
         &smbios_uuid,
-        &smbios_serial,
-        &board_serial,
+        &machine_guid,
+        // Dropped the two serial fields — they're the likely source of churn
     ])
 }
 
