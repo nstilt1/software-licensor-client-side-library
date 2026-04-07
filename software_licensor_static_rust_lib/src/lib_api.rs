@@ -183,6 +183,18 @@ impl LicenseStatus {
         cloud_version > current_version
     }
 
+    /// Manually check if an update is available by comparing a hardcoded version with 
+    /// the version in the license data.
+    /// 
+    /// If an empty string is supplied as the current version, or if the hardcoded 
+    /// version is an empty string, this function will return false so that no update 
+    /// is thought to be available.
+    pub fn is_update_available_manual(&self, current_hardcoded_version: &str, cloud_version: &str) -> bool {
+        let current_version: SemanticVersion = current_hardcoded_version.into();
+        let cloud_version: SemanticVersion = cloud_version.into();
+        cloud_version > current_version
+    }
+
     /// Gets the current system information that is already stored in the cloud.
     pub async fn get_current_system_information_that_is_stored_in_cloud(&self) -> StatsDisplay {
         match get_or_init_hw_info_file().await {
