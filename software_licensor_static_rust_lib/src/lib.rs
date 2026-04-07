@@ -200,7 +200,7 @@ impl LicenseData {
 /// way to save them all, and there isn't a way for Rust code to grab all of 
 /// the machine stats for all machines. These stats are readily available with 
 /// the JUCE library.
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn update_machine_info(
@@ -248,7 +248,7 @@ pub extern "C" fn update_machine_info(
 }
 
 /// Deallocate license data after C++ code has evaluated/copied the data
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
@@ -280,7 +280,7 @@ pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn read_reply_from_webserver(
@@ -381,7 +381,7 @@ pub extern "C" fn read_reply_from_webserver(
 /// this software can come both as a bundle or individually. There should be a 
 /// colon (:) separating each product ID from the public key.
 /// * `len` - the length of the `product_ids_and_pubkeys` array 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn check_license(
@@ -461,7 +461,7 @@ pub extern "C" fn check_license(
 /// This might be useful because it directly returns the LicenseData struct 
 /// through an inline function call. Refer to the documentation in 
 /// `check_license`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[inline(always)]
 #[cfg(not(feature = "rlib"))]
 pub extern "C" fn check_license_no_api_request(
