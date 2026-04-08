@@ -4,7 +4,7 @@ use super::*;
 use libc::{c_char, c_int, c_void, gethostname, size_t};
 use std::mem::size_of;
 
-extern "C" {
+unsafe extern "C" {
     fn sysctlbyname(
         name: *const c_char,
         oldp: *mut c_void,
