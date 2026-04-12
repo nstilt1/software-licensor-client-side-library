@@ -130,8 +130,12 @@ impl From<crate::generated::software_licensor_client::Stats> for StatsDisplay {
 }
 
 /// Gets the current machine's stats in a format that can be displayed to the user.
+/// 
+/// ## Safety:
+/// 
+/// Must use the output of this function to display hardware stats.
 pub async unsafe fn get_machine_stats_for_display() -> Result<StatsDisplay, String> {
-    if let Some(stats) = get_machine_stats(true).await {
+    if let Some(stats) = unsafe { get_machine_stats(true).await } {
         Ok(StatsDisplay::from(stats))
     } else {
         Err("Failed to get machine stats".into())

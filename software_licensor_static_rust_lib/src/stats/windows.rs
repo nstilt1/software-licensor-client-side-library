@@ -11,10 +11,7 @@ use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
 };
 use windows_sys::Win32::System::SystemInformation::{
-    ComputerNamePhysicalDnsHostname, GetComputerNameExW, GetLogicalProcessorInformationEx,
-    GetSystemFirmwareTable, GlobalMemoryStatusEx, RelationProcessorCore,
-    LOGICAL_PROCESSOR_RELATIONSHIP, MEMORYSTATUSEX, PROCESSOR_RELATIONSHIP,
-    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX,
+    ComputerNamePhysicalDnsHostname, FIRMWARE_TABLE_PROVIDER, GetComputerNameExW, GetLogicalProcessorInformationEx, GetSystemFirmwareTable, GlobalMemoryStatusEx, LOGICAL_PROCESSOR_RELATIONSHIP, MEMORYSTATUSEX, PROCESSOR_RELATIONSHIP, RelationProcessorCore, SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX
 };
 
 fn machine_guid() -> Option<String> {
@@ -74,23 +71,6 @@ fn machine_guid() -> Option<String> {
     } else {
         None
     }
-}
-
-#[inline(always)]
-pub fn get_device_id() -> String {
-    let cpu_vendor = cpu_vendor().unwrap_or_default();
-    let cpu_model = cpu_model().unwrap_or_default();
-    let smbios_uuid = smbios_system_uuid().unwrap_or_default();
-    let machine_guid = machine_guid().unwrap_or_default();
-
-    super::sha256_hex(&[
-        "windows",
-        &cpu_vendor,
-        &cpu_model,
-        &smbios_uuid,
-        &machine_guid,
-        // Dropped the two serial fields — they're the likely source of churn
-    ])
 }
 
 pub fn get_language() -> Language {
@@ -341,8 +321,16 @@ fn cpu_model() -> Option<String> {
     None
 }
 
+fn generate_sig(input: &[u8; 4]) -> u32 {
+    let mut result = 0;
+    input.iter().rev().zip(&[0, 8, 16, 24]).for_each(|n| {
+        result |= (*n.0 as u32) << n.1;
+    });
+    result
+}
+
 fn get_raw_smbios() -> Option<Vec<u8>> {
-    let sig = u32::from_le_bytes(*b"RSMB");
+    let sig = generate_sig(b"RSMB");
     let needed = unsafe { GetSystemFirmwareTable(sig, 0, null_mut(), 0) };
     if needed == 0 {
         return None;
@@ -522,4 +510,219 @@ pub fn windows_gpu_probe(
 fn utf16_array_to_string(buf: &[u16]) -> String {
     let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
     String::from_utf16_lossy(&buf[..end]).trim().to_string()
+}
+
+use sha2::{Digest, Sha256};
+
+#[inline(always)]
+pub fn get_device_id() -> String {
+    let windows = get_platform_prefix_char();
+    let fingerprint = Hardware::build_selected_fingerprint_bytes();
+
+    if fingerprint.is_empty() {
+        debug_assert!(false);
+        return String::new();
+    }
+
+    let digest = sha256_bytes(&[
+        b"windows",
+        &fingerprint,
+    ]);
+
+    format!("{windows}{}", hex::encode_upper(digest))
+}
+
+#[inline(always)]
+fn get_platform_prefix_char() -> char {
+    'W'
+}
+
+#[inline(always)]
+fn sha256_bytes(parts: &[&[u8]]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part);
+    }
+    hasher.finalize().into()
+}
+
+#[inline(always)]
+fn push_tagged_bytes(out: &mut Vec<u8>, structure_type: u8, field_tag: u8, bytes: &[u8]) {
+    out.push(structure_type);
+    out.push(field_tag);
+
+    let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(bytes);
+}
+
+#[inline(always)]
+fn push_tagged_str(out: &mut Vec<u8>, structure_type: u8, field_tag: u8, value: &str) {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    push_tagged_bytes(out, structure_type, field_tag, trimmed.as_bytes());
+}
+
+#[inline(always)]
+fn get_smbios_string<'a>(s: &'a SmbiosStruct<'a>, one_based_index: usize) -> Option<&'a str> {
+    if one_based_index == 0 {
+        return None;
+    }
+
+    s.strings
+        .get(one_based_index - 1)
+        .copied()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+}
+
+#[inline(always)]
+fn get_formatted_string_field<'a>(
+    s: &'a SmbiosStruct<'a>,
+    offset: usize,
+) -> Option<&'a str> {
+    let index = *s.formatted.get(offset)? as usize;
+    get_smbios_string(s, index)
+}
+
+#[inline(always)]
+fn push_uuid_field_if_valid(
+    out: &mut Vec<u8>,
+    structure_type: u8,
+    field_tag: u8,
+    uuid: &[u8],
+) {
+    if uuid.len() != 16 {
+        return;
+    }
+
+    let all_zero = uuid.iter().all(|&b| b == 0);
+    let all_ff = uuid.iter().all(|&b| b == 0xFF);
+
+    if all_zero || all_ff {
+        return;
+    }
+
+    push_tagged_bytes(out, structure_type, field_tag, uuid);
+}
+
+pub struct Hardware;
+
+impl Hardware {
+    #[inline(always)]
+    pub fn build_selected_fingerprint_bytes() -> Vec<u8> {
+        let raw = match get_raw_smbios() {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+
+        let table = match smbios_table_bytes(&raw) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+
+        let structs = parse_smbios_structs(table);
+        let mut out = Vec::with_capacity(512);
+
+        // Version marker so you can evolve the format later.
+        out.extend_from_slice(b"SMBIOS-FP-V2");
+
+        for s in structs {
+            match s.ty {
+                1 => {
+                    // SMBIOS Type 1 (System Information)
+                    // See DMTF SMBIOS spec (DSP0134), section "System Information (Type 1)".
+                    // 04h manufacturer string index
+                    // 05h product name string index
+                    // 06h version string index
+                    // 07h serial string index
+                    // 08h..17h UUID, 16 bytes
+                    // 19h SKU string index
+                    // 1Ah family string index
+
+                    if let Some(v) = get_formatted_string_field(&s, 0x04) {
+                        push_tagged_str(&mut out, 1, 1, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x05) {
+                        push_tagged_str(&mut out, 1, 2, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x07) {
+                        push_tagged_str(&mut out, 1, 4, v);
+                    }
+                    if s.formatted.len() >= 24 {
+                        push_uuid_field_if_valid(&mut out, 1, 5, &s.formatted[8..24]);
+                    } else {
+                        debug_assert!(false)
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x19) {
+                        push_tagged_str(&mut out, 1, 6, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x1A) {
+                        push_tagged_str(&mut out, 1, 7, v);
+                    }
+                }
+
+                2 => {
+                    // SMBIOS Type 2 (Baseboard Information)
+                    // See DMTF SMBIOS spec (DSP0134), section "Baseboard Information (Type 2)".
+                    // 04h manufacturer
+                    // 05h product
+                    // 06h version
+                    // 07h serial
+                    // 08h asset tag
+
+                    if let Some(v) = get_formatted_string_field(&s, 0x04) {
+                        push_tagged_str(&mut out, 2, 1, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x05) {
+                        push_tagged_str(&mut out, 2, 2, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x07) {
+                        push_tagged_str(&mut out, 2, 4, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x08) {
+                        push_tagged_str(&mut out, 2, 5, v);
+                    }
+                }
+
+                4 => {
+                    // SMBIOS Type 4 (Processor Information)
+                    // See DMTF SMBIOS spec (DSP0134), section "Processor Information (Type 4)".
+                    // 07h manufacturer
+                    // 10h version
+                    // 21h asset tag
+                    // 22h part number
+
+                    if let Some(v) = get_formatted_string_field(&s, 0x07) {
+                        push_tagged_str(&mut out, 4, 1, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x21) {
+                        push_tagged_str(&mut out, 4, 3, v);
+                    }
+                    if let Some(v) = get_formatted_string_field(&s, 0x22) {
+                        push_tagged_str(&mut out, 4, 4, v);
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn machine_id_compatibility() {
+        let expected = "W7DC966697DD63E544BC7C4FD289DFBA8BB6642E86034140C9260E0091A580E26";
+        let retrieved = get_device_id();
+        //let retrieved = SystemStats::get_unique_device_id();
+        assert_eq!(retrieved, expected);
+    }
 }
