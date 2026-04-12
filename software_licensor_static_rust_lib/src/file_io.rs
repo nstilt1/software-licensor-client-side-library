@@ -462,7 +462,6 @@ pub(crate) async fn check_key_file_async(
     store_id: &str, 
     company_name_str: &str, 
     product_ids_and_pubkeys: &HashMap<String, String>, 
-    machine_id: &str, 
     should_send_request: bool, 
     api_key: String,
     send_computer_name: bool,
@@ -517,7 +516,7 @@ pub(crate) async fn check_key_file_async(
         }
         // send request to check for an update
         log_info!("Sending request to check for an update since the key file is expired");
-        match activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file, send_computer_name).await {
+        match activate_license_request(store_id, company_name_str, &product_ids, &license_code, &mut license_file, send_computer_name).await {
             Ok(_) => (),
             Err(e) => {
                 log_error!("Failed to activate license: {}", e);
@@ -563,7 +562,7 @@ pub(crate) async fn check_key_file_async(
     if key_file.check_back_timestamp < now && should_send_request {
         // send request
         log_info!("Key file check back timestamp is {}, now is {}, sending request to check for an update", key_file.check_back_timestamp, now);
-        if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, machine_id, &license_code, &mut license_file, send_computer_name).await {
+        if let Ok(_) = activate_license_request(store_id, company_name_str, &product_ids, &license_code, &mut license_file, send_computer_name).await {
             (key_file, signature, license_activation_response) = match get_latest_key_file(&license_file, &product_ids, api_key.clone(), preferred_product_id_for_version_check) {
                 Ok(v) => v,
                 Err(licensing_error) => {
@@ -574,7 +573,7 @@ pub(crate) async fn check_key_file_async(
         }
     }
 
-    if machine_id.ne(&key_file.machine_id) {
+    if crate::stats::device_id().ne(&key_file.machine_id) {
         log_error!("Machine ID does not match key file machine ID");
 
         remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);

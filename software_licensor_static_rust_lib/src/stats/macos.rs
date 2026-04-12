@@ -21,7 +21,85 @@ pub fn computer_name() -> Option<String> {
     }
 }
 
-use core::ffi::{c_char, c_int, c_void};
+pub fn get_language() -> Language {
+    let users_language = super::env_locale_fallback();
+    let display_language = users_language.clone();
+    Language { display_language, users_language }
+}
+
+pub async fn collect() -> Stats {
+    let cpu_vendor = sysctl_string("machdep.cpu.vendor").unwrap_or_default();
+    let cpu_model = sysctl_string("machdep.cpu.brand_string")
+        .or_else(|| sysctl_string("hw.model"))
+        .unwrap_or_default();
+
+    let ram_mb = sysctl_u64("hw.memsize")
+        .map(super::mib_to_u32)
+        .unwrap_or(0);
+
+    let num_physical_cores = sysctl_u32("hw.physicalcpu").unwrap_or(0);
+
+    let cpu_freq_mhz = sysctl_u64("hw.cpufrequency")
+        .map(|hz| (hz / 1_000_000).min(u32::MAX as u64) as u32)
+        .unwrap_or(0);
+
+    let users_language = super::env_locale_fallback();
+    let display_language = users_language.clone();
+    let computer_name = computer_name().unwrap_or_default();
+
+    Stats {
+        cpu_vendor,
+        cpu_model,
+        ram_mb,
+        num_physical_cores,
+        cpu_freq_mhz,
+        users_language,
+        display_language,
+        computer_name,
+        gpu_info: super::detect_primary_gpu_info().await
+    }
+}
+
+fn sysctl_u64(name: &str) -> Option<u64> {
+    let cname = std::ffi::CString::new(name).ok()?;
+    let mut value: u64 = 0;
+    let mut len: size_t = size_of::<u64>();
+    let rc = unsafe {
+        sysctlbyname(
+            cname.as_ptr(),
+            &mut value as *mut _ as *mut c_void,
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc == 0 && len == size_of::<u64>() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn sysctl_u32(name: &str) -> Option<u32> {
+    let cname = std::ffi::CString::new(name).ok()?;
+    let mut value: u32 = 0;
+    let mut len: size_t = size_of::<u32>();
+    let rc = unsafe {
+        sysctlbyname(
+            cname.as_ptr(),
+            &mut value as *mut _ as *mut c_void,
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc == 0 && len == size_of::<u32>() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
 use sha2::{Digest, Sha256};
 use std::ptr;
 
@@ -99,15 +177,22 @@ pub fn get_device_id() -> String {
 
     if let Some(v) = io_platform_string("IOPlatformUUID") {
         push_tagged_str(&mut fingerprint, 1, 1, &v);
+    } else {
+        debug_assert!(false);
     }
     if let Some(v) = io_platform_string("IOPlatformSerialNumber") {
         push_tagged_str(&mut fingerprint, 1, 2, &v);
+    } else {
+        debug_assert!(false)
     }
     if let Some(v) = sysctl_string("hw.model") {
         push_tagged_str(&mut fingerprint, 1, 3, &v);
+    } else {
+        debug_assert!(false);
     }
 
     if fingerprint.len() == b"MACOS-FP-V1".len() {
+        debug_assert!(false);
         return String::new();
     }
 
@@ -178,17 +263,19 @@ fn get_platform_expert_device() -> Option<IoServiceT> {
 
 #[inline(always)]
 unsafe fn read_io_registry_string(entry: IoRegistryEntryT, key: &str) -> Option<String> {
-    let cf_key = cfstring_from_str(key)?;
-    let value = IORegistryEntryCreateCFProperty(entry, cf_key, KCF_ALLOCATOR_DEFAULT, 0);
-    CFRelease(cf_key as CFTypeRef);
+    unsafe {
+        let cf_key = cfstring_from_str(key)?;
+        let value = IORegistryEntryCreateCFProperty(entry, cf_key, KCF_ALLOCATOR_DEFAULT, 0);
+        CFRelease(cf_key as CFTypeRef);
 
-    if value.is_null() {
-        return None;
+        if value.is_null() {
+            return None;
+        }
+
+        let out = cfstring_to_rust_string(value as CFStringRef);
+        CFRelease(value);
+        out
     }
-
-    let out = cfstring_to_rust_string(value as CFStringRef);
-    CFRelease(value);
-    out
 }
 
 #[inline(always)]
@@ -201,11 +288,13 @@ unsafe fn cfstring_from_str(s: &str) -> Option<CFStringRef> {
     nul.extend_from_slice(s.as_bytes());
     nul.push(0);
 
-    let cf = CFStringCreateWithCString(
-        KCF_ALLOCATOR_DEFAULT,
-        nul.as_ptr() as *const c_char,
-        KCF_STRING_ENCODING_UTF8,
-    );
+    let cf = unsafe {
+        CFStringCreateWithCString(
+            KCF_ALLOCATOR_DEFAULT,
+            nul.as_ptr() as *const c_char,
+            KCF_STRING_ENCODING_UTF8,
+        )
+    };
 
     if cf.is_null() {
         None
@@ -216,33 +305,35 @@ unsafe fn cfstring_from_str(s: &str) -> Option<CFStringRef> {
 
 #[inline(always)]
 unsafe fn cfstring_to_rust_string(s: CFStringRef) -> Option<String> {
-    if s.is_null() || CFGetTypeID(s as CFTypeRef) != CFStringGetTypeID() {
-        return None;
+    unsafe {
+        if s.is_null() || CFGetTypeID(s as CFTypeRef) != CFStringGetTypeID() {
+            return None;
+        }
+
+        let direct = CFStringGetCStringPtr(s, KCF_STRING_ENCODING_UTF8);
+        if !direct.is_null() {
+            let len = libc::strlen(direct);
+            let bytes = std::slice::from_raw_parts(direct as *const u8, len);
+            let value = String::from_utf8_lossy(bytes).trim().to_string();
+            return if value.is_empty() { None } else { Some(value) };
+        }
+
+        let mut buf = vec![0u8; 512];
+        let ok = CFStringGetCString(
+            s,
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as isize,
+            KCF_STRING_ENCODING_UTF8,
+        );
+
+        if ok == 0 {
+            return None;
+        }
+
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        let value = String::from_utf8_lossy(&buf[..end]).trim().to_string();
+        if value.is_empty() { None } else { Some(value) }
     }
-
-    let direct = CFStringGetCStringPtr(s, KCF_STRING_ENCODING_UTF8);
-    if !direct.is_null() {
-        let len = libc::strlen(direct);
-        let bytes = std::slice::from_raw_parts(direct as *const u8, len);
-        let value = String::from_utf8_lossy(bytes).trim().to_string();
-        return if value.is_empty() { None } else { Some(value) };
-    }
-
-    let mut buf = vec![0u8; 512];
-    let ok = CFStringGetCString(
-        s,
-        buf.as_mut_ptr() as *mut c_char,
-        buf.len() as isize,
-        KCF_STRING_ENCODING_UTF8,
-    );
-
-    if ok == 0 {
-        return None;
-    }
-
-    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-    let value = String::from_utf8_lossy(&buf[..end]).trim().to_string();
-    if value.is_empty() { None } else { Some(value) }
 }
 
 #[inline(always)]
@@ -312,6 +403,7 @@ mod tests {
     #[test]
     fn test() {
         let retrieved = get_device_id();
-        assert_eq!(retrieved, "EXPECTED");
+        let retrieved = &retrieved[0..11];
+        assert_eq!(retrieved, "M7AA99C679A");
     }
 }

@@ -56,7 +56,6 @@ pub(crate) async fn activate_license_request(
     store_id: &str, 
     company_name_str: &str, 
     product_ids: &Vec<&String>, 
-    machine_id: &str, 
     license_code: &str, 
     license_file: &mut ClientSideDataStorage,
     send_computer_name: bool,
@@ -121,7 +120,7 @@ pub(crate) async fn activate_license_request(
 
     let inner_payload = LicenseActivationRequest {
         license_code: license_code.to_string(),
-        machine_id: machine_id.to_string(),
+        machine_id: crate::stats::device_id(),
         hardware_stats: hws.clone(),
         product_ids: all_product_ids.iter().cloned().collect(),
     };

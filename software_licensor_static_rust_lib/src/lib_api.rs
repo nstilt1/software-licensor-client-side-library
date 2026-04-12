@@ -123,7 +123,7 @@ impl LicenseStatus {
     #[inline(always)]
     pub async fn is_unlocked(&self) -> bool {
         log_info!("Running is_unlocked check ======================");
-        check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), false, self.store_id.clone(), self.send_computer_name, &self.preferred_product_id_for_version_check).await.is_ok()
+        check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, false, self.store_id.clone(), self.send_computer_name, &self.preferred_product_id_for_version_check).await.is_ok()
     }
     /// Gets the error message corresponding to the license status code, using 
     /// the appropriate language based on the machine's stats. This is a user-friendly
@@ -139,7 +139,7 @@ impl LicenseStatus {
     #[inline(always)]
     pub async fn check_license(&self, should_check_cloud: bool) -> Result<(bool, LicenseData, String), (bool, LicenseData)> {
         log_info!("Running check_license(should_check_cloud = {} ==================)", should_check_cloud);
-        let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, &super::stats::device_id(), should_check_cloud, self.store_id.clone(), self.send_computer_name, &self.preferred_product_id_for_version_check).await {
+        let (license_data, success) = match check_key_file_async(None, &self.store_id, &self.company_name, &self.product_ids_and_pubkeys, should_check_cloud, self.store_id.clone(), self.send_computer_name, &self.preferred_product_id_for_version_check).await {
             Ok(v) => (v, true),
             Err(e) => {
                 let license_data = match e {
@@ -284,7 +284,6 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
         store_id, 
         company_name, 
         &product_ids_and_pubkeys.keys().collect::<Vec<&String>>(),
-        &machine_id, 
         license_code,
         &mut license_file,
         send_computer_name,
@@ -301,7 +300,6 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
         store_id, 
         company_name, 
         &product_ids_and_pubkeys, 
-        &super::stats::device_id(),
         false,
         store_id.to_string(),
         send_computer_name,

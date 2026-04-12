@@ -286,7 +286,6 @@ pub extern "C" fn free_license_data(ptr: *mut LicenseData) {
 pub extern "C" fn read_reply_from_webserver(
     company_name: *const c_char, 
     store_id: *const c_char, 
-    machine_id: *const c_char, 
     license_code: *const c_char, 
     product_ids_and_pubkeys: *const *const c_char, 
     len: c_int,
@@ -305,7 +304,6 @@ pub extern "C" fn read_reply_from_webserver(
     log_info!("read_reply_from_webserver");
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
-    let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
     let license_code_str = parse_c_char!(license_code, "Failed to parse license code", true);
     let preferred_product_id_for_version_check_str = parse_c_char!(preferred_product_id_for_version_check, "Failed to parse preferred product ID for version check", true);
 
@@ -343,7 +341,7 @@ pub extern "C" fn read_reply_from_webserver(
             }
         };
         sleep(Duration::from_secs(5)).await;
-        match activate_license_request(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap.keys().collect::<Vec<&String>>(), machine_id_str, license_code_str, &mut license_file, false).await {
+        match activate_license_request(store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap.keys().collect::<Vec<&String>>(), license_code_str, &mut license_file, false).await {
             Ok(()) => (),
             Err(v) => {
                 log_error!("There was an error when activating the license: {}", v);
@@ -353,7 +351,7 @@ pub extern "C" fn read_reply_from_webserver(
                 }
             }
         };
-        match check_key_file_async(Some(&mut license_file), store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
+        match check_key_file_async(Some(&mut license_file), store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, false, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
             Ok(v) => return box_out!(v),
             Err(e) => {
                 log_error!("There was an error when checking the license after activation: {}", e);
@@ -387,7 +385,6 @@ pub extern "C" fn read_reply_from_webserver(
 pub extern "C" fn check_license(
     company_name: *const c_char, 
     store_id: *const c_char, 
-    machine_id: *const c_char, 
     product_ids_and_pubkeys: *const *const c_char, 
     len: c_int,
     preferred_product_id_for_version_check: *const c_char,
@@ -404,7 +401,6 @@ pub extern "C" fn check_license(
     }
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
-    let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
     let preferred_product_id_for_version_check_str = parse_c_char!(preferred_product_id_for_version_check, "Failed to parse preferred product ID for version check", true);
 
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
@@ -433,7 +429,7 @@ pub extern "C" fn check_license(
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, true, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
+        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, true, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
             Ok(v) => {
                 box_out!(v)
             },
@@ -467,7 +463,6 @@ pub extern "C" fn check_license(
 pub extern "C" fn check_license_no_api_request(
     company_name: *const c_char, 
     store_id: *const c_char, 
-    machine_id: *const c_char, 
     product_ids_and_pubkeys: *const *const c_char, 
     len: c_int,
     preferred_product_id_for_version_check: *const c_char,
@@ -484,7 +479,6 @@ pub extern "C" fn check_license_no_api_request(
     }
     let store_id_str = parse_c_char!(store_id, "Failed to parse store id", true);
     let company_name_str = parse_c_char!(company_name, "Failed to parse company name", true);
-    let machine_id_str = parse_c_char!(machine_id, "Failed to parse machine id", true);
     let preferred_product_id_for_version_check_str = parse_c_char!(preferred_product_id_for_version_check, "Failed to parse preferred product ID for version check", true);
     
     let array_size = unsafe { std::slice::from_raw_parts(product_ids_and_pubkeys, len as usize) };
@@ -509,7 +503,7 @@ pub extern "C" fn check_license_no_api_request(
     let rt = runtime!(true);
 
     rt.block_on(async {
-        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, machine_id_str, false, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
+        match check_key_file_async(None, store_id_str, company_name_str, &product_ids_and_pubkeys_hashmap, false, store_id_str.to_string(), false, preferred_product_id_for_version_check_str).await {
             Ok(v) => {
                 return box_out!(v)
             },
