@@ -321,6 +321,7 @@ fn cpu_model() -> Option<String> {
     None
 }
 
+#[inline(always)]
 fn generate_sig(input: &[u8; 4]) -> u32 {
     let mut result = 0;
     input.iter().rev().zip(&[0, 8, 16, 24]).for_each(|n| {
@@ -329,6 +330,7 @@ fn generate_sig(input: &[u8; 4]) -> u32 {
     result
 }
 
+#[inline(always)]
 fn get_raw_smbios() -> Option<Vec<u8>> {
     let sig = generate_sig(b"RSMB");
     let needed = unsafe { GetSystemFirmwareTable(sig, 0, null_mut(), 0) };
@@ -347,6 +349,7 @@ fn get_raw_smbios() -> Option<Vec<u8>> {
     }
 }
 
+#[inline(always)]
 fn smbios_table_bytes(raw: &[u8]) -> Option<&[u8]> {
     if raw.len() < 8 {
         None
@@ -362,6 +365,7 @@ struct SmbiosStruct<'a> {
     strings: Vec<&'a str>,
 }
 
+#[inline(always)]
 fn parse_smbios_structs(table: &[u8]) -> Vec<SmbiosStruct<'_>> {
     let mut out = Vec::new();
     let mut i = 0usize;
@@ -409,6 +413,7 @@ fn parse_smbios_structs(table: &[u8]) -> Vec<SmbiosStruct<'_>> {
     out
 }
 
+#[inline(always)]
 fn smbios_string<'a>(s: &'a SmbiosStruct<'a>, idx: usize) -> Option<String> {
     if idx == 0 {
         return None;
