@@ -501,3 +501,28 @@ pub mod cert_verify_mac {
         verify_signature(&exe, &spec)
     }
 }
+
+/// Verifies the certificate and its metadata.
+/// 
+/// # MacOS:
+/// CN = `Developer ID Application: First Last (WK12345678)`
+/// O = `First Last`
+/// OU/Team ID = WK12345678
+/// 
+/// # Windows:
+/// CN = CN
+/// O = O
+/// Team ID = None
+pub fn verify_sig(common_name: &str, organization: &str, team_id: Option<&str>) -> Result<(), String> {
+    #[cfg(all(target_os = "macos", not(debug_assertions)))]
+    return cert_verify_mac::verify_self(common_name, organization, team_id);
+    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    return cert_verify::verify_self(common_name, organization);
+    #[cfg(
+        any(
+            not(any(target_os = "macos", target_os = "windows")),
+            debug_assertions
+        )
+    )]
+    Ok(())
+}
