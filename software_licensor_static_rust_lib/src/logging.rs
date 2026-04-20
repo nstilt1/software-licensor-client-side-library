@@ -19,7 +19,7 @@ pub mod inner {
 
     const LOG_FILE_NAME: &str = "plugin.log";
     /// Maximum number of lines kept in the log file.
-    const MAX_LOG_LINES: usize = 500;
+    const MAX_LOG_LINES: usize = 5000;
     /// Lines kept after a rotation (we keep the newest half).
     const KEEP_LINES_AFTER_ROTATE: usize = MAX_LOG_LINES / 2;
 

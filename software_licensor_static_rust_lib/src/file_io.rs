@@ -103,8 +103,10 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
         match ClientSideDataStorage::decode_length_delimited(buffer.as_slice()) {
             Ok(mut data_storage) => {
                 // ensure that the next key exists before returning
+                let mut should_save_license_file = false;
                 if data_storage.next_server_ecdh_key.is_none() {
                     get_pubkeys(&mut data_storage, true).await?;
+                    should_save_license_file = true;
                 }
                 if !data_storage.license_data.contains_key(&api_key) {
                     data_storage.license_data.insert(api_key.to_string(), LicenseDataProto {
@@ -113,7 +115,9 @@ pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key
                     });
                 }
                 log_info!("Successfully decoded license file");
-                save_license_file(&data_storage, company_name_str)?;
+                if should_save_license_file {
+                    save_license_file(&data_storage, company_name_str)?;
+                }
                 Ok(data_storage)
             },
             Err(_) => {

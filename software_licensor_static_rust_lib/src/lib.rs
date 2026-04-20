@@ -20,6 +20,11 @@ use generated::software_licensor_client::{LicenseActivationResponse, LicenseKeyF
 use tokio::runtime::Runtime;
 pub use reqwest;
 
+#[cfg(target_os = "windows")]
+pub use windows;
+#[cfg(target_os = "windows")]
+pub use windows_sys;
+
 mod api;
 mod generated;
 mod error;

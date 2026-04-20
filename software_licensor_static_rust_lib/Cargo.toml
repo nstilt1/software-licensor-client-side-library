@@ -51,7 +51,13 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_SystemInformation",
     "Win32_System_Registry",
 ] }
-windows = { version = "0.61", features = ["Win32_Graphics_Dxgi"] }
+windows = { version = "0.61", features = [
+    "Win32_Graphics_Dxgi",
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_Security_WinTrust",
+    "Win32_System_Memory"
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ash = { version = "0.38", default-features = false, features = ["loaded"] }
