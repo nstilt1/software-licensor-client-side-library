@@ -40,6 +40,9 @@ pollster = "0.4"
 [target.'cfg(target_os = "macos")'.dependencies]
 directories = "6.0"
 metal = "0.32"
+security-framework = "3.2"
+security-framework-sys = "2.14"
+core-foundation = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2" }
@@ -50,6 +53,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_Globalization",
     "Win32_System_SystemInformation",
     "Win32_System_Registry",
+    "Win32_Security",
+    "Win32_Security_WinTrust",
+    "Win32_Security_Cryptography",
 ] }
 windows = { version = "0.61", features = [
     "Win32_Graphics_Dxgi",

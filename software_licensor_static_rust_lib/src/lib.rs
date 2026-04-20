@@ -31,6 +31,17 @@ mod error;
 mod file_io;
 mod macros;
 mod status_messages;
+pub mod tamper_detection;
+
+pub use sha2;
+pub use hkdf;
+pub use chacha20poly1305;
+pub use aes_gcm;
+pub use hex;
+pub use once_cell;
+pub use p384;
+pub use rand;
+pub use tokio;
 
 #[inline(always)]
 pub(crate) fn now() -> u64 {
