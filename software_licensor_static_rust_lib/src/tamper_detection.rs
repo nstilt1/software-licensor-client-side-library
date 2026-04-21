@@ -314,25 +314,16 @@ pub mod cert_verify {
     }
 }
 
-#[cfg(all(target_os = "macos", not(debug_assertions)))]
-//#[cfg(target_os = "macos")]
+//#[cfg(all(target_os = "macos", not(debug_assertions)))]
+#[cfg(target_os = "macos")]
 pub mod cert_verify_mac {
     use core_foundation::{
         base::{CFOptionFlags, TCFType},
         string::{CFString, CFStringRef},
         url::{CFURL, CFURLRef},
-        dictionary::CFDictionary,
     };
-    use security_framework_sys::base::{errSecSuccess, OSStatus};
-    use std::path::Path;
-    use std::ptr;
-
-    use core_foundation::{
-        base::{CFOptionFlags, TCFType},
-        string::CFString,
-        url::CFURL,
-    };
-    use security_framework_sys::base::{errSecSuccess, OSStatus};
+    use core_foundation::base::OSStatus;
+    use security_framework_sys::base::errSecSuccess;
     use std::{path::Path, ptr};
 
     #[derive(Debug)]
@@ -370,7 +361,7 @@ pub mod cert_verify_mac {
     const SEC_CS_CHECK_ALL_ARCHITECTURES: CFOptionFlags = 1;
 
     #[link(name = "Security", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         fn SecStaticCodeCreateWithPath(
             path: CFURLRef,
             flags: CFOptionFlags,
