@@ -317,7 +317,7 @@ pub(crate) async fn activate_license_request(
     if let Some(license_data) = license_file.license_data.get_mut(&truncated_store_id) {
         license_data.license_activation_response = Some(license_response);
     }
-    save_license_file(license_file, company_name_str)?;
+    save_license_file(license_file, company_name_str).await?;
 
     Ok(())
 }

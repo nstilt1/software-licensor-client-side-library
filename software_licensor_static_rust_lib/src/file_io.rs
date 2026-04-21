@@ -1,9 +1,8 @@
-use core::error;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Write, Read};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 #[cfg(target_os = "macos")]
 use directories::ProjectDirs;
@@ -16,6 +15,34 @@ use crate::generated::software_licensor_client::{ClientSideDataStorage, ClientSi
 use crate::api::{activate_license_request, get_pubkeys, EcdsaDigest};
 use crate::{LicenseData, log_error, log_info};
 use crate::generated::software_licensor_client::LicenseData as LicenseDataProto;
+
+use std::{
+    io::{Seek, SeekFrom},
+    sync::OnceLock,
+};
+
+use fs2::FileExt;
+use tokio::sync::RwLock;
+
+const LICENSE_FS_CHECK_INTERVAL: Duration = Duration::from_millis(500);
+static LICENSE_CACHE: OnceLock<RwLock<HashMap<PathBuf, CachedLicenseFile>>> = OnceLock::new();
+
+fn license_cache() -> &'static RwLock<HashMap<PathBuf, CachedLicenseFile>> {
+    LICENSE_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+#[derive(Clone)]
+struct FileStamp {
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+#[derive(Clone)]
+struct CachedLicenseFile {
+    stamp: FileStamp,
+    data: ClientSideDataStorage,
+    last_fs_check: Instant,
+}
 
 /// Gets the path to where the license file will be created.
 fn get_license_file_path(company_name_str: &str) -> Result<PathBuf, Error> {
@@ -90,70 +117,272 @@ pub(crate) fn get_log_file_path() -> Result<PathBuf, Error> {
     return Ok(Path::new(&format!("/HyperformanceSolutions")));
 }
 
-pub(crate) async fn get_or_init_license_file(company_name_str: &str, mut api_key: String) -> Result<ClientSideDataStorage, Error> {
+fn get_file_stamp(path: &Path) -> Result<Option<FileStamp>, Error> {
+    match fs::metadata(path) {
+        Ok(meta) => Ok(Some(FileStamp {
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        })),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+impl PartialEq for FileStamp {
+    fn eq(&self, other: &Self) -> bool {
+        self.len.eq(&other.len) && self.modified.eq(&other.modified)
+    }
+}
+
+fn should_check_fs(cached: &CachedLicenseFile) -> bool {
+    cached.last_fs_check.elapsed() >= LICENSE_FS_CHECK_INTERVAL
+}
+
+fn decode_license_bytes(buffer: &[u8]) -> Result<ClientSideDataStorage, Error> {
+    ClientSideDataStorage::decode_length_delimited(buffer).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("failed to decode license file: {e}"),
+        )
+        .into()
+    })
+}
+
+fn encode_license_bytes(data_storage: &ClientSideDataStorage) -> Vec<u8> {
+    data_storage.encode_length_delimited_to_vec()
+}
+
+pub(crate) async fn get_or_init_license_file(
+    company_name_str: &str,
+    mut api_key: String,
+) -> Result<ClientSideDataStorage, Error> {
     log_info!("Getting or initializing license file");
     let path = get_license_file_path(company_name_str)?;
     api_key.truncate(20);
-    
-    if path.exists() {
-        log_info!("License file exists, trying to read it");
-        let mut file = File::open(path)?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-        match ClientSideDataStorage::decode_length_delimited(buffer.as_slice()) {
-            Ok(mut data_storage) => {
-                // ensure that the next key exists before returning
+
+    // Fast path: if we have a cached entry and it is still within the freshness
+    // window, return it without even touching filesystem metadata.
+    {
+        let cache = license_cache().read().await;
+        if let Some(cached) = cache.get(&path) {
+            if !should_check_fs(cached) {
+                log_info!("Returning cached license file without fs metadata check");
+                let mut data_storage = cached.data.clone();
+
                 let mut should_save_license_file = false;
+
                 if data_storage.next_server_ecdh_key.is_none() {
                     get_pubkeys(&mut data_storage, true).await?;
                     should_save_license_file = true;
                 }
+
                 if !data_storage.license_data.contains_key(&api_key) {
-                    data_storage.license_data.insert(api_key.to_string(), LicenseDataProto {
+                    data_storage.license_data.insert(
+                        api_key.clone(),
+                        LicenseDataProto {
+                            license_activation_response: None,
+                            license_code: "".to_string(),
+                        },
+                    );
+                    should_save_license_file = true;
+                }
+
+                if should_save_license_file {
+                    save_license_file(&data_storage, company_name_str).await?;
+                }
+
+                return Ok(data_storage);
+            }
+        }
+    }
+
+    // Only now do we pay for the filesystem metadata check.
+    let current_stamp = get_file_stamp(&path)?;
+
+    {
+        let cache = license_cache().read().await;
+        if let (Some(stamp), Some(cached)) = (&current_stamp, cache.get(&path)) {
+            if &cached.stamp == stamp {
+                log_info!("Returning cached license file after fs metadata check");
+                let mut data_storage = cached.data.clone();
+
+                let mut should_save_license_file = false;
+
+                if data_storage.next_server_ecdh_key.is_none() {
+                    get_pubkeys(&mut data_storage, true).await?;
+                    should_save_license_file = true;
+                }
+
+                if !data_storage.license_data.contains_key(&api_key) {
+                    data_storage.license_data.insert(
+                        api_key.clone(),
+                        LicenseDataProto {
+                            license_activation_response: None,
+                            license_code: "".to_string(),
+                        },
+                    );
+                    should_save_license_file = true;
+                }
+
+                if should_save_license_file {
+                    save_license_file(&data_storage, company_name_str).await?;
+                } else {
+                    // Refresh only the last_fs_check timestamp since the file is still current.
+                    drop(cache);
+                    let mut cache = license_cache().write().await;
+                    if let Some(entry) = cache.get_mut(&path) {
+                        entry.last_fs_check = Instant::now();
+                    }
+                }
+
+                return Ok(data_storage);
+            }
+        }
+    }
+
+    // Slow path: reload from disk under write lock so only one task per process does it.
+    let mut cache = license_cache().write().await;
+
+    // Re-check after acquiring the write lock in case another task already refreshed it.
+    let current_stamp = get_file_stamp(&path)?;
+    if let (Some(stamp), Some(cached)) = (&current_stamp, cache.get(&path)) {
+        if &cached.stamp == stamp {
+            log_info!("Returning cached license file after re-check");
+            let mut data_storage = cached.data.clone();
+
+            let mut should_save_license_file = false;
+
+            if data_storage.next_server_ecdh_key.is_none() {
+                get_pubkeys(&mut data_storage, true).await?;
+                should_save_license_file = true;
+            }
+
+            if !data_storage.license_data.contains_key(&api_key) {
+                data_storage.license_data.insert(
+                    api_key.clone(),
+                    LicenseDataProto {
                         license_activation_response: None,
                         license_code: "".to_string(),
-                    });
+                    },
+                );
+                should_save_license_file = true;
+            }
+
+            if should_save_license_file {
+                save_license_file(&data_storage, company_name_str).await?;
+            }
+
+            return Ok(data_storage);
+        }
+    }
+
+    let data_storage = if path.exists() {
+        log_info!("License file exists, trying to read it");
+
+        let mut file = OpenOptions::new().read(true).open(&path)?;
+        file.lock_shared()?;
+
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        file.unlock()?;
+
+        match decode_license_bytes(&buffer) {
+            Ok(mut data_storage) => {
+                let mut should_save_license_file = false;
+
+                if data_storage.next_server_ecdh_key.is_none() {
+                    get_pubkeys(&mut data_storage, true).await?;
+                    should_save_license_file = true;
                 }
+
+                if !data_storage.license_data.contains_key(&api_key) {
+                    data_storage.license_data.insert(
+                        api_key.clone(),
+                        LicenseDataProto {
+                            license_activation_response: None,
+                            license_code: "".to_string(),
+                        },
+                    );
+                    should_save_license_file = true;
+                }
+
                 log_info!("Successfully decoded license file");
+
                 if should_save_license_file {
-                    save_license_file(&data_storage, company_name_str)?;
+                    save_license_file(&data_storage, company_name_str).await?;
+                    return Ok(data_storage);
                 }
-                Ok(data_storage)
-            },
+
+                data_storage
+            }
             Err(_) => {
                 log_error!("Failed to decode license file, initializing a new one");
-                // need to initialize the file
+
                 let mut license_data = HashMap::new();
-                license_data.insert(api_key, LicenseDataProto {
-                    license_activation_response: None,
-                    license_code: "".to_string(),
-                });
+                license_data.insert(
+                    api_key.clone(),
+                    LicenseDataProto {
+                        license_activation_response: None,
+                        license_code: "".to_string(),
+                    },
+                );
+
                 let mut data_storage = ClientSideDataStorage {
                     license_data,
                     next_server_ecdh_key: None,
                     server_ecdsa_key: None,
                 };
+
                 get_pubkeys(&mut data_storage, true).await?;
-                save_license_file(&data_storage, company_name_str)?;
-                Ok(data_storage)
+                save_license_file(&data_storage, company_name_str).await?;
+                return Ok(data_storage);
             }
         }
     } else {
         log_info!("License file does not exist, initializing a new one");
-        // path does not exist
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+
         let mut data_storage = ClientSideDataStorage {
             license_data: HashMap::new(),
             next_server_ecdh_key: None,
             server_ecdsa_key: None,
         };
+
+        if !data_storage.license_data.contains_key(&api_key) {
+            data_storage.license_data.insert(
+                api_key.clone(),
+                LicenseDataProto {
+                    license_activation_response: None,
+                    license_code: "".to_string(),
+                },
+            );
+        }
+
         get_pubkeys(&mut data_storage, true).await?;
-        save_license_file(&data_storage, company_name_str)?;
-        log_info!("Successfully initialized license file");
-        Ok(data_storage)
-    }
+        save_license_file(&data_storage, company_name_str).await?;
+        return Ok(data_storage);
+    };
+
+    let new_stamp = get_file_stamp(&path)?.ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "license file missing immediately after load",
+        )
+    })?;
+
+    cache.insert(
+        path.clone(),
+        CachedLicenseFile {
+            stamp: new_stamp,
+            data: data_storage.clone(),
+            last_fs_check: Instant::now(),
+        },
+    );
+
+    Ok(data_storage)
 }
 
 pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage, Error> {
@@ -209,28 +438,53 @@ pub(crate) async fn get_or_init_hw_info_file() -> Result<ClientSideHwInfoStorage
 }
 
 /// Saves the license file to the path (if the permissions are correct).
-pub(crate) fn save_license_file(data_storage: &ClientSideDataStorage, company_name_str: &str) -> Result<(), Error> {
+pub(crate) async fn save_license_file(
+    data_storage: &ClientSideDataStorage,
+    company_name_str: &str,
+) -> Result<(), Error> {
     log_info!("Saving license file");
+
     let path = get_license_file_path(company_name_str)?;
     log_info!("License path: {}", path.to_str().unwrap_or("Path is not valid unicode"));
-    
-    if !path.exists() {
-        log_info!("License file does not exist, creating a new one");
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        // write the file
-        let mut file = File::create_new(path)?;
-        file.write_all(data_storage.encode_length_delimited_to_vec().as_slice())?;
-    } else {
-        log_info!("License file exists, overwriting it");
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(false)
-            .truncate(true)
-            .open(path)?;
-        file.write_all(data_storage.encode_length_delimited_to_vec().as_slice())?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
     }
+
+    let bytes = encode_license_bytes(data_storage);
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&path)?;
+
+    file.lock_exclusive()?;
+
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    file.unlock()?;
+
+    let stamp = get_file_stamp(&path)?.ok_or_else(|| {
+        log_error!("license file missing immediately after save");
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "license file missing immediately after save",
+        )
+    })?;
+
+    let mut cache = license_cache().write().await;
+    cache.insert(
+        path,
+        CachedLicenseFile {
+            stamp,
+            data: data_storage.clone(),
+            last_fs_check: Instant::now(),
+        },
+    );
+
     log_info!("Successfully saved license file");
     Ok(())
 }
@@ -409,7 +663,7 @@ pub(crate) fn get_latest_key_file(data_storage: &ClientSideDataStorage, product_
 /// Removes key files so that we don't keep automatically checking up
 /// on them.
 #[inline(always)]
-pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, mut api_key: String) {
+pub(crate) async fn remove_key_files(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, mut api_key: String) {
     log_info!("Removing key files for product ids: {:?}", product_ids);
     api_key.truncate(20);
     let license_data = match license_file.license_data.get_mut(&api_key) {
@@ -426,13 +680,17 @@ pub(crate) fn remove_key_files(license_file: &mut ClientSideDataStorage, product
         license_response.licensing_errors.remove(*product_id);
     }
     license_data.license_activation_response = Some(license_response);
-    save_license_file(license_file, company_name_str).unwrap_or_else(|_| ());
+    save_license_file(license_file, company_name_str).await.unwrap_or_else(|_| ());
 }
 
-/// Handles licensing errors by removing key files before returning the error
+/// Handles licensing errors by removing key files before returning the error.
+/// 
+/// Not entirely sure if this should ever be used... removing key files is best 
+/// used when cryptographic issues arise or the machine ID doesn't match. Which 
+/// is done using remove_key_files directly.
 #[inline(always)]
-pub(crate) fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: LicensingError, api_key: String) -> Error {
-    remove_key_files(license_file, product_ids, company_name_str, api_key);
+pub(crate) async fn handle_licensing_error(license_file: &mut ClientSideDataStorage, product_ids: &Vec<&String>, company_name_str: &str, licensing_error: LicensingError, api_key: String) -> Error {
+    remove_key_files(license_file, product_ids, company_name_str, api_key).await;
     licensing_error.into()
 }
 
@@ -541,17 +799,7 @@ pub(crate) async fn check_key_file_async(
         }
         if key_file.message_code >= 512 {
             log_error!("Error code is >= 512: {}", key_file.message_code);
-            return Err(
-                handle_licensing_error(
-                    &mut license_file, 
-                    &product_ids, 
-                    company_name_str, 
-                    LicensingError::UnknownError((
-                        key_file.message_code, 
-                        format!("Unknown error: {}", key_file.message)
-                    )), 
-                    api_key
-                ))
+            return Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32))
         }
         if key_file.expiration_timestamp < now {
             log_error!("Key file expired at {}, now is {}", key_file.expiration_timestamp, now);
@@ -580,7 +828,7 @@ pub(crate) async fn check_key_file_async(
     if crate::stats::device_id().ne(&key_file.machine_id) {
         log_error!("Machine ID does not match key file machine ID");
 
-        remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
+        remove_key_files(&mut license_file, &product_ids, company_name_str, api_key).await;
         return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
     }
     
@@ -605,7 +853,7 @@ pub(crate) async fn check_key_file_async(
         Ok(v) => v,
         Err(e) => {
             log_error!("Failed to parse verifying key from developer supplied public key: {}", e);
-            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
+            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key).await;
             return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
         }
     };
@@ -613,7 +861,7 @@ pub(crate) async fn check_key_file_async(
         Ok(_) => Ok(LicenseData::from_key_file_and_license_response(&key_file, &license_activation_response, key_file.message_code as i32)),
         Err(_) => {
             log_error!("Failed to verify signature on key file");
-            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key);
+            remove_key_files(&mut license_file, &product_ids, company_name_str, api_key).await;
             Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
         }
     }
