@@ -38,6 +38,7 @@ pub use hkdf;
 pub use chacha20poly1305;
 pub use aes_gcm;
 pub use hex;
+#[cfg(feature = "logging")]
 pub use once_cell;
 pub use p384;
 pub use rand;

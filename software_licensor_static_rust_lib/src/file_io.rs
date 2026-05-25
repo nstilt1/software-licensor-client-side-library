@@ -825,8 +825,9 @@ pub(crate) async fn check_key_file_async(
         }
     }
 
-    if crate::stats::device_id().ne(&key_file.machine_id) {
-        log_error!("Machine ID does not match key file machine ID");
+    let device_id = crate::stats::device_id();
+    if device_id.ne(&key_file.machine_id) {
+        log_error!("Machine ID does not match key file machine ID. device_id: {}\nkey_file.machine_id: {}", device_id, key_file.machine_id);
 
         remove_key_files(&mut license_file, &product_ids, company_name_str, api_key).await;
         return Err(LicensingError::NoLicenseFound((license_code, key_file.product_version)).into())
