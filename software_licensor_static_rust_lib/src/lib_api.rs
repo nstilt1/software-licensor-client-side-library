@@ -278,8 +278,6 @@ async fn read_reply_from_webserver(company_name: &str, store_id: &str, license_c
         }
     };
 
-    let machine_id = super::stats::device_id();
-
     match crate::api::activate_license_request(
         store_id, 
         company_name, 
