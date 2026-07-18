@@ -182,7 +182,7 @@ fn num_physical_cores() -> Option<u32> {
 /// Gets the computer name using gethostname.
 pub fn computer_name() -> Option<String> {
     let mut buf = [0u8; 256];
-    let rc = unsafe { gethostname(buf.as_mut_ptr() as *mut i8, buf.len()) };
+    let rc = unsafe { gethostname(buf.as_mut_ptr() as *mut u8, buf.len()) };
     if rc != 0 {
         return None;
     }
